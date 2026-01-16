@@ -1058,10 +1058,7 @@ mod tests {
         let mut result2 = ValidationResult::new();
         let record2 = json!({"ts": "2024-01-15T12:30:45.123456"});
         validator.validate_record(&record2, 1, &mut result2);
-        assert!(
-            result2.valid,
-            "Timestamp with microseconds should be valid"
-        );
+        assert!(result2.valid, "Timestamp with microseconds should be valid");
     }
 
     #[test]
@@ -1293,7 +1290,10 @@ mod tests {
         let mut result = ValidationResult::new();
         let record = json!({"tags": []});
         validator.validate_record(&record, 1, &mut result);
-        assert!(result.valid, "Empty array should be valid for REPEATED field");
+        assert!(
+            result.valid,
+            "Empty array should be valid for REPEATED field"
+        );
     }
 
     #[test]
@@ -1307,9 +1307,12 @@ mod tests {
 {"name": "Bob", "age": 25}
 {"name": "Charlie"}"#;
 
-        let result =
-            validate_json_data(std::io::Cursor::new(input), &schema, ValidationOptions::default())
-                .unwrap();
+        let result = validate_json_data(
+            std::io::Cursor::new(input),
+            &schema,
+            ValidationOptions::default(),
+        )
+        .unwrap();
 
         assert!(result.valid);
         assert_eq!(result.error_count, 0);
@@ -1326,9 +1329,12 @@ mod tests {
 {"name": "Bob", "age": "not a number"}
 {"name": "Charlie"}"#;
 
-        let result =
-            validate_json_data(std::io::Cursor::new(input), &schema, ValidationOptions::default())
-                .unwrap();
+        let result = validate_json_data(
+            std::io::Cursor::new(input),
+            &schema,
+            ValidationOptions::default(),
+        )
+        .unwrap();
 
         assert!(!result.valid);
         // Should have errors for missing required field and type mismatch

@@ -153,7 +153,10 @@ mod tests {
     fn test_diff_format_parsing() {
         assert_eq!("text".parse::<DiffFormat>().unwrap(), DiffFormat::Text);
         assert_eq!("json".parse::<DiffFormat>().unwrap(), DiffFormat::Json);
-        assert_eq!("json-patch".parse::<DiffFormat>().unwrap(), DiffFormat::JsonPatch);
+        assert_eq!(
+            "json-patch".parse::<DiffFormat>().unwrap(),
+            DiffFormat::JsonPatch
+        );
         assert_eq!("sql".parse::<DiffFormat>().unwrap(), DiffFormat::Sql);
         assert!("invalid".parse::<DiffFormat>().is_err());
     }
@@ -170,7 +173,10 @@ mod tests {
     fn test_diff_format_case_insensitive() {
         assert_eq!("TEXT".parse::<DiffFormat>().unwrap(), DiffFormat::Text);
         assert_eq!("Json".parse::<DiffFormat>().unwrap(), DiffFormat::Json);
-        assert_eq!("JSON-PATCH".parse::<DiffFormat>().unwrap(), DiffFormat::JsonPatch);
+        assert_eq!(
+            "JSON-PATCH".parse::<DiffFormat>().unwrap(),
+            DiffFormat::JsonPatch
+        );
     }
 
     #[test]

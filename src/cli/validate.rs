@@ -327,7 +327,11 @@ mod tests {
         // Mix direct path and glob pattern
         let patterns = vec![
             file1_path.to_string_lossy().to_string(),
-            temp_dir.path().join("data2.json").to_string_lossy().to_string(),
+            temp_dir
+                .path()
+                .join("data2.json")
+                .to_string_lossy()
+                .to_string(),
         ];
         let files = collect_input_files(&patterns);
 
