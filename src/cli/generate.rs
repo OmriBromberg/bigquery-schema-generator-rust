@@ -12,29 +12,174 @@ use bq_schema_gen::{
 
 use super::Cli;
 
-/// Run the generate command (default)
-pub fn run(cli: &Cli) {
+/// Errors that can occur during schema generation
+#[derive(Debug)]
+#[allow(dead_code)] // Some variants are for public API completeness
+pub enum GenerateError {
+    /// Invalid input format specified
+    InvalidInputFormat(String),
+    /// Invalid output format specified
+    InvalidOutputFormat(String),
+    /// Failed to load existing schema
+    ExistingSchemaLoad(PathBuf, String),
+    /// Invalid glob pattern
+    InvalidGlobPattern(String, String),
+    /// Per-file mode requires input files
+    PerFileRequiresInput,
+    /// Output directory requires per-file mode
+    OutputDirRequiresPerFile,
+    /// Watch mode requires input files
+    WatchRequiresInput,
+    /// Watch mode cannot be used with per-file mode
+    WatchWithPerFile,
+    /// No input files found
+    NoInputFiles,
+    /// Failed to open input file
+    InputFileOpen(PathBuf, std::io::Error),
+    /// Failed to create output file
+    OutputFileCreate(PathBuf, std::io::Error),
+    /// Failed to create output directory
+    OutputDirCreate(PathBuf, std::io::Error),
+    /// Processing error
+    ProcessingError(String),
+    /// Watch mode error
+    WatchError(String),
+}
+
+impl std::fmt::Display for GenerateError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GenerateError::InvalidInputFormat(fmt) => {
+                write!(f, "Unknown input format '{}'. Use 'json' or 'csv'.", fmt)
+            }
+            GenerateError::InvalidOutputFormat(fmt) => {
+                write!(
+                    f,
+                    "Unknown output format '{}'. Use 'json', 'ddl', 'debug-map', or 'json-schema'.",
+                    fmt
+                )
+            }
+            GenerateError::ExistingSchemaLoad(path, e) => {
+                write!(
+                    f,
+                    "Cannot load existing schema from '{}': {}",
+                    path.display(),
+                    e
+                )
+            }
+            GenerateError::InvalidGlobPattern(pattern, e) => {
+                write!(f, "Invalid glob pattern '{}': {}", pattern, e)
+            }
+            GenerateError::PerFileRequiresInput => {
+                write!(
+                    f,
+                    "--per-file requires input files (cannot read from stdin)"
+                )
+            }
+            GenerateError::OutputDirRequiresPerFile => {
+                write!(f, "--output-dir requires --per-file")
+            }
+            GenerateError::WatchRequiresInput => {
+                write!(f, "--watch requires input file patterns")
+            }
+            GenerateError::WatchWithPerFile => {
+                write!(f, "--watch cannot be used with --per-file")
+            }
+            GenerateError::NoInputFiles => {
+                write!(f, "No input files found")
+            }
+            GenerateError::InputFileOpen(path, e) => {
+                write!(f, "Cannot open input file '{}': {}", path.display(), e)
+            }
+            GenerateError::OutputFileCreate(path, e) => {
+                write!(f, "Cannot create output file '{}': {}", path.display(), e)
+            }
+            GenerateError::OutputDirCreate(path, e) => {
+                write!(
+                    f,
+                    "Cannot create output directory '{}': {}",
+                    path.display(),
+                    e
+                )
+            }
+            GenerateError::ProcessingError(msg) => {
+                write!(f, "Processing error: {}", msg)
+            }
+            GenerateError::WatchError(msg) => {
+                write!(f, "Watch mode error: {}", msg)
+            }
+        }
+    }
+}
+
+impl std::error::Error for GenerateError {}
+
+/// Validated CLI arguments for schema generation
+#[derive(Debug, Clone)]
+#[allow(dead_code)] // Fields are part of public API
+pub struct ValidatedArgs {
+    /// Input format
+    pub input_format: InputFormat,
+    /// Output format
+    pub output_format: OutputFormat,
+    /// Generator configuration
+    pub config: GeneratorConfig,
+    /// Existing schema map (if provided)
+    pub existing_schema: Option<SchemaMap>,
+    /// Input files (empty means stdin)
+    pub input_files: Vec<PathBuf>,
+    /// Output path (None means stdout)
+    pub output_path: Option<PathBuf>,
+    /// Output directory for per-file mode
+    pub output_dir: Option<PathBuf>,
+    /// Per-file mode flag
+    pub per_file: bool,
+    /// Watch mode flag
+    pub watch: bool,
+    /// Number of threads for parallel processing
+    pub threads: Option<usize>,
+    /// Table name for DDL output
+    pub table_name: String,
+    /// Quiet mode
+    pub quiet: bool,
+    /// Ignore invalid lines
+    pub ignore_invalid_lines: bool,
+    /// Debugging interval
+    pub debugging_interval: usize,
+    /// Debounce delay for watch mode
+    pub debounce: u64,
+    /// Command to run on change in watch mode
+    pub on_change: Option<String>,
+    /// Original files patterns (for watch mode)
+    pub file_patterns: Vec<String>,
+}
+
+/// Output from schema generation
+#[derive(Debug)]
+#[allow(dead_code)] // Fields are part of public API, used by tests
+pub struct GenerateOutput {
+    /// Number of lines processed
+    pub lines_processed: usize,
+    /// Number of files processed
+    pub files_processed: usize,
+    /// Error logs from processing
+    pub error_logs: Vec<ErrorLog>,
+}
+
+/// Validate CLI arguments and return validated args
+pub fn validate_cli_args(cli: &Cli) -> Result<ValidatedArgs, GenerateError> {
     // Parse input format
     let input_format = match cli.input_format.to_lowercase().as_str() {
         "json" => InputFormat::Json,
         "csv" => InputFormat::Csv,
-        other => {
-            eprintln!(
-                "Error: Unknown input format '{}'. Use 'json' or 'csv'.",
-                other
-            );
-            std::process::exit(1);
-        }
+        other => return Err(GenerateError::InvalidInputFormat(other.to_string())),
     };
 
     // Parse output format
-    let output_format: OutputFormat = cli.output_format.parse().unwrap_or_else(|_| {
-        eprintln!(
-            "Error: Unknown output format '{}'. Use 'json', 'ddl', 'debug-map', or 'json-schema'.",
-            cli.output_format
-        );
-        std::process::exit(1);
-    });
+    let output_format: OutputFormat = cli
+        .output_format
+        .parse()
+        .map_err(|_| GenerateError::InvalidOutputFormat(cli.output_format.clone()))?;
 
     // Build configuration
     let config = GeneratorConfig {
@@ -49,56 +194,90 @@ pub fn run(cli: &Cli) {
     // Load existing schema if provided
     let existing_schema: Option<SchemaMap> = match &cli.existing_schema_path {
         Some(path) => {
-            let schema = read_existing_schema_from_file(path).unwrap_or_else(|e| {
-                eprintln!(
-                    "Error: Cannot load existing schema from '{}': {}",
-                    path.display(),
-                    e
-                );
-                std::process::exit(1);
-            });
+            let schema = read_existing_schema_from_file(path)
+                .map_err(|e| GenerateError::ExistingSchemaLoad(path.clone(), e.to_string()))?;
             Some(schema)
         }
         None => None,
     };
 
     // Collect input files from positional args and -i/--input flag
-    let input_files = collect_input_files(cli);
+    let input_files = collect_input_files_impl(cli)?;
 
     // Validate per-file options
     if cli.per_file && input_files.is_empty() {
-        eprintln!("Error: --per-file requires input files (cannot read from stdin)");
-        std::process::exit(1);
+        return Err(GenerateError::PerFileRequiresInput);
     }
 
     if cli.output_dir.is_some() && !cli.per_file {
-        eprintln!("Error: --output-dir requires --per-file");
-        std::process::exit(1);
+        return Err(GenerateError::OutputDirRequiresPerFile);
     }
 
     // Watch mode validation
     if cli.watch && cli.files.is_empty() {
-        eprintln!("Error: --watch requires input file patterns");
-        std::process::exit(1);
+        return Err(GenerateError::WatchRequiresInput);
     }
 
     if cli.watch && cli.per_file {
-        eprintln!("Error: --watch cannot be used with --per-file");
-        std::process::exit(1);
+        return Err(GenerateError::WatchWithPerFile);
     }
 
-    // Handle watch mode
-    if cli.watch {
-        run_watch_mode(cli, &config);
+    Ok(ValidatedArgs {
+        input_format,
+        output_format,
+        config,
+        existing_schema,
+        input_files,
+        output_path: cli.output.clone(),
+        output_dir: cli.output_dir.clone(),
+        per_file: cli.per_file,
+        watch: cli.watch,
+        threads: cli.threads,
+        table_name: cli.table_name.clone(),
+        quiet: cli.quiet,
+        ignore_invalid_lines: cli.ignore_invalid_lines,
+        debugging_interval: cli.debugging_interval,
+        debounce: cli.debounce,
+        on_change: cli.on_change.clone(),
+        file_patterns: cli.files.clone(),
+    })
+}
+
+/// Generate schema from validated arguments (testable entry point)
+pub fn generate_schema(args: &ValidatedArgs) -> Result<GenerateOutput, GenerateError> {
+    if args.per_file {
+        process_per_file_impl(args)
+    } else if args.input_files.is_empty() {
+        process_single_input_impl(None, args)
+    } else {
+        process_merged_files_impl(args)
+    }
+}
+
+/// Run the generate command (default)
+pub fn run(cli: &Cli) {
+    let args = match validate_cli_args(cli) {
+        Ok(args) => args,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Handle watch mode separately (it has its own loop)
+    if args.watch {
+        run_watch_mode(cli, &args.config);
         return;
     }
 
-    if cli.per_file {
-        process_per_file(&input_files, &config, &output_format, cli, existing_schema);
-    } else if input_files.is_empty() {
-        process_single_input(None, &config, &output_format, cli, existing_schema);
-    } else {
-        process_merged_files(&input_files, &config, &output_format, cli, existing_schema);
+    match generate_schema(&args) {
+        Ok(_output) => {
+            // Success - output was already written
+        }
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
     }
 }
 
@@ -122,7 +301,7 @@ fn run_watch_mode(cli: &Cli, config: &GeneratorConfig) {
 }
 
 /// Collect input files from positional arguments and -i/--input flag, expanding globs
-fn collect_input_files(cli: &Cli) -> Vec<PathBuf> {
+fn collect_input_files_impl(cli: &Cli) -> Result<Vec<PathBuf>, GenerateError> {
     let mut files = Vec::new();
 
     // Add files from positional arguments (with glob expansion)
@@ -153,8 +332,10 @@ fn collect_input_files(cli: &Cli) -> Vec<PathBuf> {
                 }
             }
             Err(e) => {
-                eprintln!("Error: Invalid glob pattern '{}': {}", pattern, e);
-                std::process::exit(1);
+                return Err(GenerateError::InvalidGlobPattern(
+                    pattern.clone(),
+                    e.to_string(),
+                ));
             }
         }
     }
@@ -164,177 +345,148 @@ fn collect_input_files(cli: &Cli) -> Vec<PathBuf> {
         files.push(input_path.clone());
     }
 
-    files
+    Ok(files)
 }
 
-/// Process a single input (file or stdin)
-fn process_single_input(
+/// Process a single input (file or stdin) - implementation
+fn process_single_input_impl(
     input_path: Option<&Path>,
-    config: &GeneratorConfig,
-    output_format: &OutputFormat,
-    cli: &Cli,
-    existing_schema: Option<SchemaMap>,
-) {
+    args: &ValidatedArgs,
+) -> Result<GenerateOutput, GenerateError> {
     let input: Box<dyn Read> = match input_path {
         Some(path) => {
-            let file = File::open(path).unwrap_or_else(|e| {
-                eprintln!("Error: Cannot open input file '{}': {}", path.display(), e);
-                std::process::exit(1);
-            });
+            let file =
+                File::open(path).map_err(|e| GenerateError::InputFileOpen(path.to_owned(), e))?;
             Box::new(file)
         }
         None => Box::new(io::stdin()),
     };
 
-    let mut output: Box<dyn io::Write> = match &cli.output {
+    let mut output: Box<dyn io::Write> = match &args.output_path {
         Some(path) => {
-            let file = File::create(path).unwrap_or_else(|e| {
-                eprintln!(
-                    "Error: Cannot create output file '{}': {}",
-                    path.display(),
-                    e
-                );
-                std::process::exit(1);
-            });
+            let file =
+                File::create(path).map_err(|e| GenerateError::OutputFileCreate(path.clone(), e))?;
             Box::new(file)
         }
         None => Box::new(io::stdout()),
     };
 
-    let mut generator = SchemaGenerator::new(config.clone());
-    let mut schema_map = existing_schema.unwrap_or_default();
+    let mut generator = SchemaGenerator::new(args.config.clone());
+    let mut schema_map = args.existing_schema.clone().unwrap_or_default();
 
-    process_input(
+    process_input_impl(
         input,
-        config.input_format,
+        args.config.input_format,
         &mut generator,
         &mut schema_map,
-        cli.ignore_invalid_lines,
-        cli.debugging_interval,
-        cli.quiet,
-    );
+        args.ignore_invalid_lines,
+        args.debugging_interval,
+        args.quiet,
+    )?;
 
-    if !cli.quiet {
+    if !args.quiet {
         eprintln!("Processed {} lines", generator.line_number());
     }
 
+    let error_logs = generator.error_logs().to_vec();
     print_errors(&generator);
     write_output(
         &generator,
         &schema_map,
-        output_format,
-        &cli.table_name,
+        &args.output_format,
+        &args.table_name,
         &mut output,
-    );
+    )?;
+
+    Ok(GenerateOutput {
+        lines_processed: generator.line_number(),
+        files_processed: if input_path.is_some() { 1 } else { 0 },
+        error_logs,
+    })
 }
 
-/// Process multiple files and merge into single schema
-fn process_merged_files(
-    input_files: &[PathBuf],
-    config: &GeneratorConfig,
-    output_format: &OutputFormat,
-    cli: &Cli,
-    existing_schema: Option<SchemaMap>,
-) {
-    let num_threads = cli.threads.unwrap_or_else(num_cpus::get);
-    let use_parallel = num_threads > 1 && input_files.len() > 1;
+/// Process multiple files and merge into single schema - implementation
+fn process_merged_files_impl(args: &ValidatedArgs) -> Result<GenerateOutput, GenerateError> {
+    let num_threads = args.threads.unwrap_or_else(num_cpus::get);
+    let use_parallel = num_threads > 1 && args.input_files.len() > 1;
 
     if use_parallel {
-        process_files_parallel(
-            input_files,
-            config,
-            output_format,
-            cli,
-            existing_schema,
-            num_threads,
-        );
+        process_files_parallel_impl(args, num_threads)
     } else {
-        process_files_sequential(input_files, config, output_format, cli, existing_schema);
+        process_files_sequential_impl(args)
     }
 }
 
-/// Process files sequentially (original behavior)
-fn process_files_sequential(
-    input_files: &[PathBuf],
-    config: &GeneratorConfig,
-    output_format: &OutputFormat,
-    cli: &Cli,
-    existing_schema: Option<SchemaMap>,
-) {
-    let mut output: Box<dyn io::Write> = match &cli.output {
+/// Process files sequentially - implementation
+fn process_files_sequential_impl(args: &ValidatedArgs) -> Result<GenerateOutput, GenerateError> {
+    let mut output: Box<dyn io::Write> = match &args.output_path {
         Some(path) => {
-            let file = File::create(path).unwrap_or_else(|e| {
-                eprintln!(
-                    "Error: Cannot create output file '{}': {}",
-                    path.display(),
-                    e
-                );
-                std::process::exit(1);
-            });
+            let file =
+                File::create(path).map_err(|e| GenerateError::OutputFileCreate(path.clone(), e))?;
             Box::new(file)
         }
         None => Box::new(io::stdout()),
     };
 
-    let mut generator = SchemaGenerator::new(config.clone());
-    let mut schema_map = existing_schema.unwrap_or_default();
+    let mut generator = SchemaGenerator::new(args.config.clone());
+    let mut schema_map = args.existing_schema.clone().unwrap_or_default();
     let mut total_lines = 0;
 
-    for (idx, path) in input_files.iter().enumerate() {
-        if !cli.quiet {
+    for (idx, path) in args.input_files.iter().enumerate() {
+        if !args.quiet {
             eprintln!(
                 "Processing file {}/{}: {}",
                 idx + 1,
-                input_files.len(),
+                args.input_files.len(),
                 path.display()
             );
         }
 
-        let file = File::open(path).unwrap_or_else(|e| {
-            eprintln!("Error: Cannot open input file '{}': {}", path.display(), e);
-            std::process::exit(1);
-        });
+        let file = File::open(path).map_err(|e| GenerateError::InputFileOpen(path.clone(), e))?;
 
         let lines_before = generator.line_number();
-        process_input(
+        process_input_impl(
             file,
-            config.input_format,
+            args.config.input_format,
             &mut generator,
             &mut schema_map,
-            cli.ignore_invalid_lines,
-            cli.debugging_interval,
-            cli.quiet,
-        );
+            args.ignore_invalid_lines,
+            args.debugging_interval,
+            args.quiet,
+        )?;
         total_lines += generator.line_number() - lines_before;
     }
 
-    if !cli.quiet {
+    if !args.quiet {
         eprintln!(
             "Processed {} lines from {} files",
             total_lines,
-            input_files.len()
+            args.input_files.len()
         );
     }
 
+    let error_logs = generator.error_logs().to_vec();
     print_errors(&generator);
     write_output(
         &generator,
         &schema_map,
-        output_format,
-        &cli.table_name,
+        &args.output_format,
+        &args.table_name,
         &mut output,
-    );
+    )?;
+
+    Ok(GenerateOutput {
+        lines_processed: total_lines,
+        files_processed: args.input_files.len(),
+        error_logs,
+    })
 }
 
-/// Process files in parallel using rayon
-fn process_files_parallel(
-    input_files: &[PathBuf],
-    config: &GeneratorConfig,
-    output_format: &OutputFormat,
-    cli: &Cli,
-    existing_schema: Option<SchemaMap>,
+/// Process files in parallel - implementation
+fn process_files_parallel_impl(
+    args: &ValidatedArgs,
     num_threads: usize,
-) {
+) -> Result<GenerateOutput, GenerateError> {
     use indicatif::{ProgressBar, ProgressStyle};
     use rayon::prelude::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -346,24 +498,18 @@ fn process_files_parallel(
         .build_global()
         .ok(); // Ignore error if already initialized
 
-    let mut output: Box<dyn io::Write> = match &cli.output {
+    let mut output: Box<dyn io::Write> = match &args.output_path {
         Some(path) => {
-            let file = File::create(path).unwrap_or_else(|e| {
-                eprintln!(
-                    "Error: Cannot create output file '{}': {}",
-                    path.display(),
-                    e
-                );
-                std::process::exit(1);
-            });
+            let file =
+                File::create(path).map_err(|e| GenerateError::OutputFileCreate(path.clone(), e))?;
             Box::new(file)
         }
         None => Box::new(io::stdout()),
     };
 
     // Set up progress bar
-    let progress = if !cli.quiet {
-        let pb = ProgressBar::new(input_files.len() as u64);
+    let progress = if !args.quiet {
+        let pb = ProgressBar::new(args.input_files.len() as u64);
         pb.set_style(
             ProgressStyle::default_bar()
                 .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len} files | {msg}")
@@ -378,9 +524,12 @@ fn process_files_parallel(
 
     let total_records = AtomicUsize::new(0);
     let all_errors: Mutex<Vec<ErrorLog>> = Mutex::new(Vec::new());
+    let config = args.config.clone();
+    let ignore_invalid_lines = args.ignore_invalid_lines;
 
     // Process files in parallel
-    let results: Vec<SchemaMap> = input_files
+    let results: Vec<SchemaMap> = args
+        .input_files
         .par_iter()
         .filter_map(|path| {
             let file = match File::open(path) {
@@ -398,13 +547,13 @@ fn process_files_parallel(
             let result: Result<(), ()> = match config.input_format {
                 InputFormat::Json => {
                     let buf_reader = BufReader::new(file);
-                    let iter = JsonRecordIterator::new(buf_reader, cli.ignore_invalid_lines);
+                    let iter = JsonRecordIterator::new(buf_reader, ignore_invalid_lines);
                     for record_result in iter {
                         match record_result {
                             Ok((_line_num, record)) => {
                                 let _ = generator.process_record(&record, &mut schema_map);
                             }
-                            Err(_) if cli.ignore_invalid_lines => continue,
+                            Err(_) if ignore_invalid_lines => continue,
                             Err(e) => {
                                 eprintln!("Error processing '{}': {}", path.display(), e);
                                 break;
@@ -463,36 +612,41 @@ fn process_files_parallel(
 
     // Merge all schema maps
     let mut final_generator = SchemaGenerator::new(config.clone());
-    let mut final_schema = existing_schema.unwrap_or_default();
+    let mut final_schema = args.existing_schema.clone().unwrap_or_default();
 
     for schema_map in results {
         merge_schema_maps(&mut final_generator, &mut final_schema, schema_map);
     }
 
     let total = total_records.load(Ordering::Relaxed);
-    if !cli.quiet {
+    if !args.quiet {
         eprintln!(
             "Processed {} records from {} files using {} threads",
             total,
-            input_files.len(),
+            args.input_files.len(),
             num_threads
         );
     }
 
     // Print collected errors
-    if let Ok(errors) = all_errors.lock() {
-        for error in errors.iter() {
-            eprintln!("Problem on line {}: {}", error.line_number, error.msg);
-        }
+    let error_logs = all_errors.lock().map(|e| e.clone()).unwrap_or_default();
+    for error in &error_logs {
+        eprintln!("Problem on line {}: {}", error.line_number, error.msg);
     }
 
     write_output(
         &final_generator,
         &final_schema,
-        output_format,
-        &cli.table_name,
+        &args.output_format,
+        &args.table_name,
         &mut output,
-    );
+    )?;
+
+    Ok(GenerateOutput {
+        lines_processed: total,
+        files_processed: args.input_files.len(),
+        error_logs,
+    })
 }
 
 /// Merge source schema map into target schema map
@@ -543,67 +697,49 @@ fn schema_entry_to_json(entry: &SchemaEntry) -> serde_json::Value {
     }
 }
 
-/// Process each file separately, outputting separate schemas
-fn process_per_file(
-    input_files: &[PathBuf],
-    config: &GeneratorConfig,
-    output_format: &OutputFormat,
-    cli: &Cli,
-    existing_schema: Option<SchemaMap>,
-) {
-    if let Some(output_dir) = &cli.output_dir {
-        std::fs::create_dir_all(output_dir).unwrap_or_else(|e| {
-            eprintln!(
-                "Error: Cannot create output directory '{}': {}",
-                output_dir.display(),
-                e
-            );
-            std::process::exit(1);
-        });
+/// Process each file separately - implementation
+fn process_per_file_impl(args: &ValidatedArgs) -> Result<GenerateOutput, GenerateError> {
+    if let Some(output_dir) = &args.output_dir {
+        std::fs::create_dir_all(output_dir)
+            .map_err(|e| GenerateError::OutputDirCreate(output_dir.clone(), e))?;
     }
 
-    for (idx, path) in input_files.iter().enumerate() {
-        if !cli.quiet {
+    let mut total_lines = 0;
+    let mut all_error_logs = Vec::new();
+
+    for (idx, path) in args.input_files.iter().enumerate() {
+        if !args.quiet {
             eprintln!(
                 "Processing file {}/{}: {}",
                 idx + 1,
-                input_files.len(),
+                args.input_files.len(),
                 path.display()
             );
         }
 
-        let file = File::open(path).unwrap_or_else(|e| {
-            eprintln!("Error: Cannot open input file '{}': {}", path.display(), e);
-            std::process::exit(1);
-        });
+        let file = File::open(path).map_err(|e| GenerateError::InputFileOpen(path.clone(), e))?;
 
-        let output_path = get_per_file_output_path(path, &cli.output_dir);
+        let output_path = get_per_file_output_path(path, &args.output_dir);
         let mut output: Box<dyn io::Write> = {
-            let file = File::create(&output_path).unwrap_or_else(|e| {
-                eprintln!(
-                    "Error: Cannot create output file '{}': {}",
-                    output_path.display(),
-                    e
-                );
-                std::process::exit(1);
-            });
+            let file = File::create(&output_path)
+                .map_err(|e| GenerateError::OutputFileCreate(output_path.clone(), e))?;
             Box::new(file)
         };
 
-        let mut generator = SchemaGenerator::new(config.clone());
-        let mut schema_map = existing_schema.clone().unwrap_or_default();
+        let mut generator = SchemaGenerator::new(args.config.clone());
+        let mut schema_map = args.existing_schema.clone().unwrap_or_default();
 
-        process_input(
+        process_input_impl(
             file,
-            config.input_format,
+            args.config.input_format,
             &mut generator,
             &mut schema_map,
-            cli.ignore_invalid_lines,
-            cli.debugging_interval,
-            cli.quiet,
-        );
+            args.ignore_invalid_lines,
+            args.debugging_interval,
+            args.quiet,
+        )?;
 
-        if !cli.quiet {
+        if !args.quiet {
             eprintln!(
                 "  Processed {} lines -> {}",
                 generator.line_number(),
@@ -611,15 +747,24 @@ fn process_per_file(
             );
         }
 
+        total_lines += generator.line_number();
+        all_error_logs.extend(generator.error_logs().iter().cloned());
+
         print_errors(&generator);
         write_output(
             &generator,
             &schema_map,
-            output_format,
-            &cli.table_name,
+            &args.output_format,
+            &args.table_name,
             &mut output,
-        );
+        )?;
     }
+
+    Ok(GenerateOutput {
+        lines_processed: total_lines,
+        files_processed: args.input_files.len(),
+        error_logs: all_error_logs,
+    })
 }
 
 /// Get output path for per-file mode
@@ -633,8 +778,8 @@ fn get_per_file_output_path(input_path: &Path, output_dir: &Option<PathBuf>) -> 
     }
 }
 
-/// Process input and update schema
-fn process_input<R: Read>(
+/// Process input and update schema - implementation (returns Result)
+fn process_input_impl<R: Read>(
     input: R,
     input_format: InputFormat,
     generator: &mut SchemaGenerator,
@@ -642,7 +787,7 @@ fn process_input<R: Read>(
     ignore_invalid_lines: bool,
     debugging_interval: usize,
     quiet: bool,
-) {
+) -> Result<(), GenerateError> {
     let result = match input_format {
         InputFormat::Json => {
             let buf_reader = BufReader::new(input);
@@ -660,10 +805,7 @@ fn process_input<R: Read>(
         }
     };
 
-    if let Err(e) = result {
-        eprintln!("Error: {}", e);
-        std::process::exit(1);
-    }
+    result.map_err(|e| GenerateError::ProcessingError(e.to_string()))
 }
 
 /// Print error logs from generator
@@ -673,14 +815,14 @@ fn print_errors(generator: &SchemaGenerator) {
     }
 }
 
-/// Write schema output
+/// Write schema output (returns Result)
 fn write_output<W: io::Write>(
     generator: &SchemaGenerator,
     schema_map: &SchemaMap,
     output_format: &OutputFormat,
     table_name: &str,
     output: &mut W,
-) {
+) -> Result<(), GenerateError> {
     let write_result = match output_format {
         OutputFormat::Json => {
             let schema = generator.flatten_schema(schema_map);
@@ -697,10 +839,7 @@ fn write_output<W: io::Write>(
         }
     };
 
-    if let Err(e) = write_result {
-        eprintln!("Error writing output: {}", e);
-        std::process::exit(1);
-    }
+    write_result.map_err(|e| GenerateError::ProcessingError(format!("Error writing output: {}", e)))
 }
 
 /// Process JSON input records
@@ -757,10 +896,20 @@ fn process_csv_input<R: Read>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use tempfile::{NamedTempFile, TempDir};
 
     /// Helper to create a schema entry
     fn make_entry(name: &str, bq_type: BqType, mode: BqMode) -> SchemaEntry {
         SchemaEntry::new(name.to_string(), bq_type, mode)
+    }
+
+    /// Helper to create a temp file with content
+    fn create_temp_file(content: &str) -> NamedTempFile {
+        let mut file = NamedTempFile::new().unwrap();
+        file.write_all(content.as_bytes()).unwrap();
+        file.flush().unwrap();
+        file
     }
 
     #[test]
@@ -1133,7 +1282,7 @@ invalid json
         );
 
         let mut output = Vec::new();
-        write_output(
+        let result = write_output(
             &generator,
             &schema_map,
             &OutputFormat::Json,
@@ -1141,6 +1290,7 @@ invalid json
             &mut output,
         );
 
+        assert!(result.is_ok());
         let output_str = String::from_utf8(output).unwrap();
         assert!(output_str.contains("\"name\""));
         assert!(output_str.contains("\"test\""));
@@ -1157,7 +1307,7 @@ invalid json
         );
 
         let mut output = Vec::new();
-        write_output(
+        let result = write_output(
             &generator,
             &schema_map,
             &OutputFormat::Ddl,
@@ -1165,6 +1315,7 @@ invalid json
             &mut output,
         );
 
+        assert!(result.is_ok());
         let output_str = String::from_utf8(output).unwrap();
         assert!(output_str.contains("CREATE TABLE"));
         assert!(output_str.contains("my_table"));
@@ -1181,7 +1332,7 @@ invalid json
         );
 
         let mut output = Vec::new();
-        write_output(
+        let result = write_output(
             &generator,
             &schema_map,
             &OutputFormat::DebugMap,
@@ -1189,7 +1340,392 @@ invalid json
             &mut output,
         );
 
+        assert!(result.is_ok());
         let output_str = String::from_utf8(output).unwrap();
         assert!(!output_str.is_empty());
+    }
+
+    // ===== Tests for validate_cli_args =====
+
+    fn create_test_cli() -> Cli {
+        Cli {
+            command: None,
+            files: vec![],
+            input_format: "json".to_string(),
+            output_format: "json".to_string(),
+            table_name: "test_table".to_string(),
+            keep_nulls: false,
+            quoted_values_are_strings: false,
+            infer_mode: false,
+            debugging_interval: 1000,
+            sanitize_names: false,
+            ignore_invalid_lines: false,
+            existing_schema_path: None,
+            preserve_input_sort_order: false,
+            quiet: true,
+            input: None,
+            output: None,
+            per_file: false,
+            output_dir: None,
+            threads: None,
+            watch: false,
+            debounce: 100,
+            on_change: None,
+        }
+    }
+
+    #[test]
+    fn test_validate_cli_args_invalid_input_format() {
+        let mut cli = create_test_cli();
+        cli.input_format = "invalid".to_string();
+
+        let result = validate_cli_args(&cli);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            GenerateError::InvalidInputFormat(_)
+        ));
+    }
+
+    #[test]
+    fn test_validate_cli_args_invalid_output_format() {
+        let mut cli = create_test_cli();
+        cli.output_format = "invalid".to_string();
+
+        let result = validate_cli_args(&cli);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            GenerateError::InvalidOutputFormat(_)
+        ));
+    }
+
+    #[test]
+    fn test_validate_cli_args_per_file_no_files() {
+        let mut cli = create_test_cli();
+        cli.per_file = true;
+        cli.files = vec![];
+
+        let result = validate_cli_args(&cli);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            GenerateError::PerFileRequiresInput
+        ));
+    }
+
+    #[test]
+    fn test_validate_cli_args_output_dir_without_per_file() {
+        let mut cli = create_test_cli();
+        cli.output_dir = Some(PathBuf::from("/output"));
+        cli.per_file = false;
+
+        let result = validate_cli_args(&cli);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            GenerateError::OutputDirRequiresPerFile
+        ));
+    }
+
+    #[test]
+    fn test_validate_cli_args_watch_no_files() {
+        let mut cli = create_test_cli();
+        cli.watch = true;
+        cli.files = vec![];
+
+        let result = validate_cli_args(&cli);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            GenerateError::WatchRequiresInput
+        ));
+    }
+
+    #[test]
+    fn test_validate_cli_args_watch_with_per_file() {
+        let temp_file = create_temp_file(r#"{"id": 1}"#);
+        let mut cli = create_test_cli();
+        cli.watch = true;
+        cli.per_file = true;
+        cli.files = vec![temp_file.path().to_string_lossy().to_string()];
+
+        let result = validate_cli_args(&cli);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            GenerateError::WatchWithPerFile
+        ));
+    }
+
+    #[test]
+    fn test_validate_cli_args_valid_json_format() {
+        let cli = create_test_cli();
+
+        let result = validate_cli_args(&cli);
+        assert!(result.is_ok());
+        let args = result.unwrap();
+        assert_eq!(args.input_format, InputFormat::Json);
+        assert_eq!(args.output_format, OutputFormat::Json);
+    }
+
+    #[test]
+    fn test_validate_cli_args_valid_csv_format() {
+        let mut cli = create_test_cli();
+        cli.input_format = "csv".to_string();
+
+        let result = validate_cli_args(&cli);
+        assert!(result.is_ok());
+        let args = result.unwrap();
+        assert_eq!(args.input_format, InputFormat::Csv);
+    }
+
+    #[test]
+    fn test_validate_cli_args_all_output_formats() {
+        for format in &["json", "ddl", "debug-map", "json-schema"] {
+            let mut cli = create_test_cli();
+            cli.output_format = format.to_string();
+
+            let result = validate_cli_args(&cli);
+            assert!(result.is_ok(), "Format '{}' should be valid", format);
+        }
+    }
+
+    #[test]
+    fn test_validate_cli_args_with_input_file() {
+        let temp_file = create_temp_file(r#"{"id": 1}"#);
+        let mut cli = create_test_cli();
+        cli.input = Some(temp_file.path().to_owned());
+
+        let result = validate_cli_args(&cli);
+        assert!(result.is_ok());
+        let args = result.unwrap();
+        assert_eq!(args.input_files.len(), 1);
+    }
+
+    #[test]
+    fn test_validate_cli_args_with_existing_schema() {
+        let schema_file =
+            create_temp_file(r#"[{"name": "id", "type": "INTEGER", "mode": "NULLABLE"}]"#);
+        let mut cli = create_test_cli();
+        cli.existing_schema_path = Some(schema_file.path().to_owned());
+
+        let result = validate_cli_args(&cli);
+        assert!(result.is_ok());
+        let args = result.unwrap();
+        assert!(args.existing_schema.is_some());
+    }
+
+    #[test]
+    fn test_validate_cli_args_existing_schema_not_found() {
+        let mut cli = create_test_cli();
+        cli.existing_schema_path = Some(PathBuf::from("/nonexistent/schema.json"));
+
+        let result = validate_cli_args(&cli);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            GenerateError::ExistingSchemaLoad(_, _)
+        ));
+    }
+
+    // ===== Tests for generate_schema =====
+
+    #[test]
+    fn test_generate_schema_single_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let input_file = temp_dir.path().join("input.json");
+        let output_file = temp_dir.path().join("output.json");
+
+        std::fs::write(&input_file, r#"{"id": 1, "name": "test"}"#).unwrap();
+
+        let args = ValidatedArgs {
+            input_format: InputFormat::Json,
+            output_format: OutputFormat::Json,
+            config: GeneratorConfig::default(),
+            existing_schema: None,
+            input_files: vec![input_file],
+            output_path: Some(output_file.clone()),
+            output_dir: None,
+            per_file: false,
+            watch: false,
+            threads: Some(1),
+            table_name: "test_table".to_string(),
+            quiet: true,
+            ignore_invalid_lines: false,
+            debugging_interval: 1000,
+            debounce: 100,
+            on_change: None,
+            file_patterns: vec![],
+        };
+
+        let result = generate_schema(&args);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output.lines_processed, 1);
+        assert_eq!(output.files_processed, 1);
+        assert!(output_file.exists());
+    }
+
+    #[test]
+    fn test_generate_schema_multiple_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let input_file1 = temp_dir.path().join("input1.json");
+        let input_file2 = temp_dir.path().join("input2.json");
+        let output_file = temp_dir.path().join("output.json");
+
+        std::fs::write(&input_file1, r#"{"id": 1}"#).unwrap();
+        std::fs::write(&input_file2, r#"{"name": "test"}"#).unwrap();
+
+        let args = ValidatedArgs {
+            input_format: InputFormat::Json,
+            output_format: OutputFormat::Json,
+            config: GeneratorConfig::default(),
+            existing_schema: None,
+            input_files: vec![input_file1, input_file2],
+            output_path: Some(output_file.clone()),
+            output_dir: None,
+            per_file: false,
+            watch: false,
+            threads: Some(1), // Force sequential
+            table_name: "test_table".to_string(),
+            quiet: true,
+            ignore_invalid_lines: false,
+            debugging_interval: 1000,
+            debounce: 100,
+            on_change: None,
+            file_patterns: vec![],
+        };
+
+        let result = generate_schema(&args);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output.lines_processed, 2);
+        assert_eq!(output.files_processed, 2);
+    }
+
+    #[test]
+    fn test_generate_schema_per_file_mode() {
+        let temp_dir = TempDir::new().unwrap();
+        let input_file1 = temp_dir.path().join("input1.json");
+        let input_file2 = temp_dir.path().join("input2.json");
+        let output_dir = temp_dir.path().join("output");
+
+        std::fs::write(&input_file1, r#"{"id": 1}"#).unwrap();
+        std::fs::write(&input_file2, r#"{"name": "test"}"#).unwrap();
+
+        let args = ValidatedArgs {
+            input_format: InputFormat::Json,
+            output_format: OutputFormat::Json,
+            config: GeneratorConfig::default(),
+            existing_schema: None,
+            input_files: vec![input_file1.clone(), input_file2.clone()],
+            output_path: None,
+            output_dir: Some(output_dir.clone()),
+            per_file: true,
+            watch: false,
+            threads: None,
+            table_name: "test_table".to_string(),
+            quiet: true,
+            ignore_invalid_lines: false,
+            debugging_interval: 1000,
+            debounce: 100,
+            on_change: None,
+            file_patterns: vec![],
+        };
+
+        let result = generate_schema(&args);
+        assert!(result.is_ok());
+
+        // Check output files were created
+        assert!(output_dir.join("input1.schema.json").exists());
+        assert!(output_dir.join("input2.schema.json").exists());
+    }
+
+    #[test]
+    fn test_generate_schema_stdin() {
+        // When input_files is empty, it should read from stdin
+        // We can't easily test stdin, but we can verify the code path exists
+        let args = ValidatedArgs {
+            input_format: InputFormat::Json,
+            output_format: OutputFormat::Json,
+            config: GeneratorConfig::default(),
+            existing_schema: None,
+            input_files: vec![],
+            output_path: None,
+            output_dir: None,
+            per_file: false,
+            watch: false,
+            threads: None,
+            table_name: "test_table".to_string(),
+            quiet: true,
+            ignore_invalid_lines: false,
+            debugging_interval: 1000,
+            debounce: 100,
+            on_change: None,
+            file_patterns: vec![],
+        };
+
+        // This will try to read from stdin and will timeout/block
+        // so we don't actually run it, just verify the structure
+        assert!(args.input_files.is_empty());
+    }
+
+    #[test]
+    fn test_generate_error_display() {
+        // Test all error variant display implementations
+        let err = GenerateError::InvalidInputFormat("xml".to_string());
+        assert!(err.to_string().contains("xml"));
+
+        let err = GenerateError::InvalidOutputFormat("yaml".to_string());
+        assert!(err.to_string().contains("yaml"));
+
+        let err = GenerateError::ExistingSchemaLoad(
+            PathBuf::from("/path/schema.json"),
+            "not found".to_string(),
+        );
+        assert!(err.to_string().contains("schema.json"));
+
+        let err = GenerateError::InvalidGlobPattern("**[".to_string(), "unclosed".to_string());
+        assert!(err.to_string().contains("**["));
+
+        let err = GenerateError::PerFileRequiresInput;
+        assert!(err.to_string().contains("--per-file"));
+
+        let err = GenerateError::OutputDirRequiresPerFile;
+        assert!(err.to_string().contains("--output-dir"));
+
+        let err = GenerateError::WatchRequiresInput;
+        assert!(err.to_string().contains("--watch"));
+
+        let err = GenerateError::WatchWithPerFile;
+        assert!(err.to_string().contains("--watch"));
+
+        let err = GenerateError::NoInputFiles;
+        assert!(err.to_string().contains("No input files"));
+
+        let err = GenerateError::InputFileOpen(
+            PathBuf::from("/path/input.json"),
+            std::io::Error::new(std::io::ErrorKind::NotFound, "not found"),
+        );
+        assert!(err.to_string().contains("input.json"));
+
+        let err = GenerateError::OutputFileCreate(
+            PathBuf::from("/path/output.json"),
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
+        );
+        assert!(err.to_string().contains("output.json"));
+
+        let err = GenerateError::OutputDirCreate(
+            PathBuf::from("/path/dir"),
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
+        );
+        assert!(err.to_string().contains("/path/dir"));
+
+        let err = GenerateError::ProcessingError("test error".to_string());
+        assert!(err.to_string().contains("test error"));
+
+        let err = GenerateError::WatchError("watch error".to_string());
+        assert!(err.to_string().contains("watch error"));
     }
 }

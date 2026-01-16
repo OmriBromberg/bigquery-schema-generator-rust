@@ -170,4 +170,165 @@ mod tests {
         result.add_warning(ValidationError::unknown_field(2, "extra"));
         assert_eq!(result.warnings.len(), 1);
     }
+
+    // ===== Additional Coverage Tests =====
+
+    #[test]
+    fn test_validation_error_type_display() {
+        let missing = ValidationErrorType::MissingRequired;
+        assert_eq!(missing.to_string(), "missing required field");
+
+        let type_mismatch = ValidationErrorType::TypeMismatch {
+            expected: "INTEGER".to_string(),
+            actual: "STRING".to_string(),
+        };
+        assert_eq!(type_mismatch.to_string(), "expected INTEGER, got STRING");
+
+        let unknown = ValidationErrorType::UnknownField;
+        assert_eq!(unknown.to_string(), "unknown field");
+    }
+
+    #[test]
+    fn test_validation_error_missing_required() {
+        let err = ValidationError::missing_required(10, "user.name");
+
+        assert_eq!(err.line, 10);
+        assert_eq!(err.path, "user.name");
+        assert_eq!(err.error_type, ValidationErrorType::MissingRequired);
+        assert!(err.message.contains("REQUIRED"));
+        assert!(err.message.contains("user.name"));
+    }
+
+    #[test]
+    fn test_validation_error_type_mismatch() {
+        let err = ValidationError::type_mismatch(5, "age", "INTEGER", "STRING", "twenty");
+
+        assert_eq!(err.line, 5);
+        assert_eq!(err.path, "age");
+        match &err.error_type {
+            ValidationErrorType::TypeMismatch { expected, actual } => {
+                assert_eq!(expected, "INTEGER");
+                assert_eq!(actual, "STRING");
+            }
+            _ => panic!("Expected TypeMismatch"),
+        }
+        assert!(err.message.contains("expected INTEGER"));
+        assert!(err.message.contains("got STRING"));
+        assert!(err.message.contains("twenty"));
+    }
+
+    #[test]
+    fn test_validation_error_unknown_field() {
+        let err = ValidationError::unknown_field(3, "legacy_data.old_field");
+
+        assert_eq!(err.line, 3);
+        assert_eq!(err.path, "legacy_data.old_field");
+        assert_eq!(err.error_type, ValidationErrorType::UnknownField);
+        assert!(err.message.contains("Unknown field"));
+        assert!(err.message.contains("not in schema"));
+    }
+
+    #[test]
+    fn test_validation_error_display_format() {
+        let err = ValidationError::missing_required(42, "required_field");
+        let display_str = err.to_string();
+
+        assert!(display_str.contains("Line 42"));
+        assert!(display_str.contains("required_field"));
+    }
+
+    #[test]
+    fn test_validation_result_default() {
+        let result = ValidationResult::default();
+
+        assert!(result.valid);
+        assert_eq!(result.error_count, 0);
+        assert!(result.errors.is_empty());
+        assert!(result.warnings.is_empty());
+    }
+
+    #[test]
+    fn test_validation_result_reached_max_errors() {
+        let mut result = ValidationResult::new();
+
+        assert!(!result.reached_max_errors(5));
+
+        for i in 0..5 {
+            result.add_error(ValidationError::missing_required(i, "field"));
+        }
+
+        assert!(result.reached_max_errors(5));
+        assert!(!result.reached_max_errors(6));
+    }
+
+    #[test]
+    fn test_validation_result_multiple_errors() {
+        let mut result = ValidationResult::new();
+
+        result.add_error(ValidationError::missing_required(1, "a"));
+        result.add_error(ValidationError::type_mismatch(2, "b", "INT", "STR", "x"));
+        result.add_error(ValidationError::unknown_field(3, "c"));
+
+        assert!(!result.valid);
+        assert_eq!(result.error_count, 3);
+        assert_eq!(result.errors.len(), 3);
+    }
+
+    #[test]
+    fn test_validation_result_multiple_warnings() {
+        let mut result = ValidationResult::new();
+
+        result.add_warning(ValidationError::unknown_field(1, "extra1"));
+        result.add_warning(ValidationError::unknown_field(2, "extra2"));
+
+        // Warnings don't affect validity
+        assert!(result.valid);
+        assert_eq!(result.error_count, 0);
+        assert_eq!(result.warnings.len(), 2);
+    }
+
+    #[test]
+    fn test_validation_error_serialization() {
+        let err = ValidationError::type_mismatch(1, "field", "INTEGER", "BOOLEAN", "true");
+        let json = serde_json::to_string(&err).unwrap();
+
+        assert!(json.contains("\"line\":1"));
+        assert!(json.contains("\"path\":\"field\""));
+        assert!(json.contains("type_mismatch"));
+    }
+
+    #[test]
+    fn test_validation_result_serialization() {
+        let mut result = ValidationResult::new();
+        result.add_error(ValidationError::missing_required(1, "id"));
+
+        let json = serde_json::to_string(&result).unwrap();
+
+        assert!(json.contains("\"valid\":false"));
+        assert!(json.contains("\"error_count\":1"));
+        // warnings should be skipped if empty
+    }
+
+    #[test]
+    fn test_validation_error_type_equality() {
+        let a = ValidationErrorType::MissingRequired;
+        let b = ValidationErrorType::MissingRequired;
+        assert_eq!(a, b);
+
+        let c = ValidationErrorType::TypeMismatch {
+            expected: "A".to_string(),
+            actual: "B".to_string(),
+        };
+        let d = ValidationErrorType::TypeMismatch {
+            expected: "A".to_string(),
+            actual: "B".to_string(),
+        };
+        assert_eq!(c, d);
+
+        let e = ValidationErrorType::TypeMismatch {
+            expected: "A".to_string(),
+            actual: "C".to_string(),
+        };
+        assert_ne!(c, e);
+    }
 }

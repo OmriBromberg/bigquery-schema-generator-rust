@@ -254,4 +254,289 @@ mod tests {
         assert!(!BqType::Integer.is_string_compatible());
         assert!(!BqType::Float.is_string_compatible());
     }
+
+    // ===== Additional Coverage Tests =====
+
+    #[test]
+    fn test_is_internal_all_types() {
+        // Internal types
+        assert!(BqType::Null.is_internal());
+        assert!(BqType::EmptyArray.is_internal());
+        assert!(BqType::EmptyRecord.is_internal());
+
+        // Non-internal types
+        assert!(!BqType::String.is_internal());
+        assert!(!BqType::Integer.is_internal());
+        assert!(!BqType::Float.is_internal());
+        assert!(!BqType::Boolean.is_internal());
+        assert!(!BqType::Timestamp.is_internal());
+        assert!(!BqType::Date.is_internal());
+        assert!(!BqType::Time.is_internal());
+        assert!(!BqType::Record(SchemaMap::new()).is_internal());
+
+        // Quoted types
+        assert!(!BqType::QBoolean.is_internal());
+        assert!(!BqType::QInteger.is_internal());
+        assert!(!BqType::QFloat.is_internal());
+    }
+
+    #[test]
+    fn test_is_quoted_all_types() {
+        // Quoted types
+        assert!(BqType::QBoolean.is_quoted());
+        assert!(BqType::QInteger.is_quoted());
+        assert!(BqType::QFloat.is_quoted());
+
+        // Non-quoted types
+        assert!(!BqType::String.is_quoted());
+        assert!(!BqType::Integer.is_quoted());
+        assert!(!BqType::Float.is_quoted());
+        assert!(!BqType::Boolean.is_quoted());
+        assert!(!BqType::Timestamp.is_quoted());
+        assert!(!BqType::Date.is_quoted());
+        assert!(!BqType::Time.is_quoted());
+        assert!(!BqType::Null.is_quoted());
+        assert!(!BqType::EmptyArray.is_quoted());
+        assert!(!BqType::EmptyRecord.is_quoted());
+        assert!(!BqType::Record(SchemaMap::new()).is_quoted());
+    }
+
+    #[test]
+    fn test_is_string_compatible_matrix() {
+        // String compatible types (can be merged with String to produce String)
+        let string_compatible_types = vec![
+            BqType::QBoolean,
+            BqType::QInteger,
+            BqType::QFloat,
+            BqType::String,
+            BqType::Timestamp,
+            BqType::Date,
+            BqType::Time,
+        ];
+
+        for t in &string_compatible_types {
+            assert!(
+                t.is_string_compatible(),
+                "{:?} should be string compatible",
+                t
+            );
+        }
+
+        // Non-string compatible types
+        let non_string_compatible = vec![
+            BqType::Boolean,
+            BqType::Integer,
+            BqType::Float,
+            BqType::Null,
+            BqType::EmptyArray,
+            BqType::EmptyRecord,
+            BqType::Record(SchemaMap::new()),
+        ];
+
+        for t in &non_string_compatible {
+            assert!(
+                !t.is_string_compatible(),
+                "{:?} should NOT be string compatible",
+                t
+            );
+        }
+    }
+
+    #[test]
+    fn test_bq_type_display_all_types() {
+        assert_eq!(BqType::Boolean.to_string(), "BOOLEAN");
+        assert_eq!(BqType::QBoolean.to_string(), "BOOLEAN");
+        assert_eq!(BqType::Integer.to_string(), "INTEGER");
+        assert_eq!(BqType::QInteger.to_string(), "INTEGER");
+        assert_eq!(BqType::Float.to_string(), "FLOAT");
+        assert_eq!(BqType::QFloat.to_string(), "FLOAT");
+        assert_eq!(BqType::String.to_string(), "STRING");
+        assert_eq!(BqType::Timestamp.to_string(), "TIMESTAMP");
+        assert_eq!(BqType::Date.to_string(), "DATE");
+        assert_eq!(BqType::Time.to_string(), "TIME");
+        assert_eq!(BqType::Record(SchemaMap::new()).to_string(), "RECORD");
+        assert_eq!(BqType::Null.to_string(), "STRING");
+        assert_eq!(BqType::EmptyArray.to_string(), "STRING");
+        assert_eq!(BqType::EmptyRecord.to_string(), "RECORD");
+    }
+
+    #[test]
+    fn test_bq_mode_display() {
+        assert_eq!(BqMode::Nullable.to_string(), "NULLABLE");
+        assert_eq!(BqMode::Required.to_string(), "REQUIRED");
+        assert_eq!(BqMode::Repeated.to_string(), "REPEATED");
+    }
+
+    #[test]
+    fn test_entry_status_variants() {
+        // Test all variants
+        let hard = EntryStatus::Hard;
+        let soft = EntryStatus::Soft;
+        let ignore = EntryStatus::Ignore;
+        assert!(format!("{:?}", hard).contains("Hard"));
+        assert!(format!("{:?}", soft).contains("Soft"));
+        assert!(format!("{:?}", ignore).contains("Ignore"));
+
+        // Test equality
+        assert_eq!(EntryStatus::Hard, EntryStatus::Hard);
+        assert_ne!(EntryStatus::Hard, EntryStatus::Soft);
+        assert_ne!(EntryStatus::Soft, EntryStatus::Ignore);
+    }
+
+    #[test]
+    fn test_schema_entry_new() {
+        let entry = SchemaEntry::new("field".to_string(), BqType::String, BqMode::Nullable);
+        assert_eq!(entry.name, "field");
+        assert_eq!(entry.status, EntryStatus::Hard);
+        assert!(entry.filled);
+        assert_eq!(entry.mode, BqMode::Nullable);
+    }
+
+    #[test]
+    fn test_schema_entry_soft() {
+        let entry = SchemaEntry::soft("soft_field".to_string(), BqType::Null, BqMode::Nullable);
+        assert_eq!(entry.name, "soft_field");
+        assert_eq!(entry.status, EntryStatus::Soft);
+        assert!(!entry.filled);
+        assert_eq!(entry.bq_type, BqType::Null);
+    }
+
+    #[test]
+    fn test_schema_entry_with_record() {
+        let mut nested = SchemaMap::new();
+        nested.insert(
+            "child".to_string(),
+            SchemaEntry::new("child".to_string(), BqType::Integer, BqMode::Nullable),
+        );
+
+        let entry = SchemaEntry::new(
+            "parent".to_string(),
+            BqType::Record(nested.clone()),
+            BqMode::Nullable,
+        );
+
+        assert_eq!(entry.name, "parent");
+        match &entry.bq_type {
+            BqType::Record(fields) => {
+                assert!(fields.contains_key("child"));
+            }
+            _ => panic!("Expected Record type"),
+        }
+    }
+
+    #[test]
+    fn test_bq_schema_field_new() {
+        let field = BqSchemaField::new(
+            "test".to_string(),
+            "STRING".to_string(),
+            "NULLABLE".to_string(),
+        );
+        assert_eq!(field.name, "test");
+        assert_eq!(field.field_type, "STRING");
+        assert_eq!(field.mode, "NULLABLE");
+        assert!(field.fields.is_none());
+    }
+
+    #[test]
+    fn test_bq_schema_field_record() {
+        let children = vec![
+            BqSchemaField::new(
+                "a".to_string(),
+                "INTEGER".to_string(),
+                "NULLABLE".to_string(),
+            ),
+            BqSchemaField::new(
+                "b".to_string(),
+                "STRING".to_string(),
+                "NULLABLE".to_string(),
+            ),
+        ];
+
+        let record = BqSchemaField::record("parent".to_string(), "NULLABLE".to_string(), children);
+
+        assert_eq!(record.name, "parent");
+        assert_eq!(record.field_type, "RECORD");
+        assert_eq!(record.mode, "NULLABLE");
+        assert!(record.fields.is_some());
+        assert_eq!(record.fields.unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_bq_schema_field_clone() {
+        let original = BqSchemaField::new(
+            "test".to_string(),
+            "STRING".to_string(),
+            "NULLABLE".to_string(),
+        );
+        let cloned = original.clone();
+
+        assert_eq!(original.name, cloned.name);
+        assert_eq!(original.field_type, cloned.field_type);
+        assert_eq!(original.mode, cloned.mode);
+    }
+
+    #[test]
+    fn test_schema_map_operations() {
+        let mut map = SchemaMap::new();
+        assert!(map.is_empty());
+
+        map.insert(
+            "field1".to_string(),
+            SchemaEntry::new("field1".to_string(), BqType::String, BqMode::Nullable),
+        );
+        assert_eq!(map.len(), 1);
+        assert!(!map.is_empty());
+
+        assert!(map.contains_key("field1"));
+        assert!(!map.contains_key("field2"));
+
+        let entry = map.get("field1").unwrap();
+        assert_eq!(entry.name, "field1");
+    }
+
+    #[test]
+    fn test_bq_type_record_as_str() {
+        let empty_record = BqType::EmptyRecord;
+        let record_with_fields = BqType::Record(SchemaMap::new());
+
+        assert_eq!(empty_record.as_str(), "RECORD");
+        assert_eq!(record_with_fields.as_str(), "RECORD");
+    }
+
+    #[test]
+    fn test_bq_schema_field_serialization() {
+        let field = BqSchemaField::new(
+            "test".to_string(),
+            "STRING".to_string(),
+            "NULLABLE".to_string(),
+        );
+
+        let json = serde_json::to_string(&field).unwrap();
+        assert!(json.contains("\"name\":\"test\""));
+        assert!(json.contains("\"type\":\"STRING\""));
+        assert!(json.contains("\"mode\":\"NULLABLE\""));
+        assert!(!json.contains("\"fields\"")); // Should skip fields when None
+    }
+
+    #[test]
+    fn test_bq_schema_field_deserialization() {
+        let json = r#"{"name":"test","type":"STRING","mode":"NULLABLE"}"#;
+        let field: BqSchemaField = serde_json::from_str(json).unwrap();
+
+        assert_eq!(field.name, "test");
+        assert_eq!(field.field_type, "STRING");
+        assert_eq!(field.mode, "NULLABLE");
+        assert!(field.fields.is_none());
+    }
+
+    #[test]
+    fn test_bq_mode_serialization() {
+        let nullable = BqMode::Nullable;
+        let required = BqMode::Required;
+        let repeated = BqMode::Repeated;
+
+        assert_eq!(serde_json::to_string(&nullable).unwrap(), "\"NULLABLE\"");
+        assert_eq!(serde_json::to_string(&required).unwrap(), "\"REQUIRED\"");
+        assert_eq!(serde_json::to_string(&repeated).unwrap(), "\"REPEATED\"");
+    }
 }

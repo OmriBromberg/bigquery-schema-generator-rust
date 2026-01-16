@@ -868,4 +868,248 @@ mod tests {
             .unwrap();
         assert_eq!(field.field_type, "FLOAT");
     }
+
+    // ===== Additional Coverage Tests =====
+
+    #[test]
+    fn test_watch_state_with_invalid_file() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("test.json");
+
+        // Create file with invalid JSON
+        let mut file = File::create(&file_path).unwrap();
+        writeln!(file, "invalid json").unwrap();
+
+        let config = GeneratorConfig::default();
+        let watch_config = WatchConfig {
+            quiet: true,
+            ..Default::default()
+        };
+        let files = vec![file_path];
+
+        // Should handle error gracefully
+        let state = WatchState::new(&files, config, watch_config).unwrap();
+
+        // Schema should be empty due to error
+        assert!(state.current_schema().is_empty());
+    }
+
+    #[test]
+    fn test_handle_file_change_error_gracefully() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("test.json");
+
+        // Create valid file
+        let mut file = File::create(&file_path).unwrap();
+        writeln!(file, r#"{{"name": "test"}}"#).unwrap();
+
+        let config = GeneratorConfig::default();
+        let watch_config = WatchConfig {
+            quiet: true,
+            ..Default::default()
+        };
+        let files = vec![file_path.clone()];
+
+        let mut state = WatchState::new(&files, config, watch_config).unwrap();
+
+        // Make file invalid
+        let mut file = File::create(&file_path).unwrap();
+        writeln!(file, "invalid json").unwrap();
+
+        // Should return None on error
+        let diff = state.handle_file_change(&file_path);
+        assert!(diff.is_none());
+    }
+
+    #[test]
+    fn test_handle_file_change_no_schema_changes() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("test.json");
+
+        // Create file
+        let mut file = File::create(&file_path).unwrap();
+        writeln!(file, r#"{{"name": "test"}}"#).unwrap();
+
+        let config = GeneratorConfig::default();
+        let watch_config = WatchConfig::default();
+        let files = vec![file_path.clone()];
+
+        let mut state = WatchState::new(&files, config, watch_config).unwrap();
+
+        // Rewrite same content
+        let mut file = File::create(&file_path).unwrap();
+        writeln!(file, r#"{{"name": "test"}}"#).unwrap();
+
+        // Should return None since schema didn't change
+        let diff = state.handle_file_change(&file_path);
+        assert!(diff.is_none());
+    }
+
+    #[test]
+    fn test_collect_files_empty_patterns() {
+        let result = collect_files_from_patterns(&[]);
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_collect_files_no_matches() {
+        let result = collect_files_from_patterns(&["/nonexistent/path/*.json".to_string()]);
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_get_unique_dirs_empty() {
+        let dirs = get_unique_dirs(&[]);
+        assert!(dirs.is_empty());
+    }
+
+    #[test]
+    fn test_get_unique_dirs_duplicates() {
+        let files = vec![
+            PathBuf::from("/data/file1.json"),
+            PathBuf::from("/data/file2.json"),
+            PathBuf::from("/data/file3.json"),
+        ];
+
+        let dirs = get_unique_dirs(&files);
+        assert_eq!(dirs.len(), 1);
+    }
+
+    #[test]
+    fn test_matches_any_pattern_invalid_pattern() {
+        // Invalid pattern should not match
+        let patterns = vec!["[invalid".to_string()];
+        assert!(!matches_any_pattern(
+            std::path::Path::new("test.json"),
+            &patterns
+        ));
+    }
+
+    #[test]
+    fn test_matches_any_pattern_empty_patterns() {
+        let patterns: Vec<String> = vec![];
+        assert!(!matches_any_pattern(
+            std::path::Path::new("test.json"),
+            &patterns
+        ));
+    }
+
+    #[test]
+    fn test_watch_state_empty_files() {
+        let config = GeneratorConfig::default();
+        let watch_config = WatchConfig::default();
+
+        let state = WatchState::new(&[], config, watch_config).unwrap();
+        assert!(state.current_schema().is_empty());
+    }
+
+    #[test]
+    fn test_watch_config_custom_values() {
+        let config = WatchConfig {
+            debounce_ms: 500,
+            on_change: Some("echo done".to_string()),
+            quiet: true,
+            ignore_invalid_lines: true,
+        };
+
+        assert_eq!(config.debounce_ms, 500);
+        assert_eq!(config.on_change, Some("echo done".to_string()));
+        assert!(config.quiet);
+        assert!(config.ignore_invalid_lines);
+    }
+
+    #[test]
+    fn test_entry_to_json_nested_repeated_record() {
+        use crate::schema::{BqMode, BqType, SchemaEntry, SchemaMap};
+
+        // Nested repeated record
+        let mut inner_nested = SchemaMap::new();
+        inner_nested.insert(
+            "deep".to_string(),
+            SchemaEntry::new("deep".to_string(), BqType::String, BqMode::Nullable),
+        );
+
+        let mut nested = SchemaMap::new();
+        nested.insert(
+            "inner".to_string(),
+            SchemaEntry::new(
+                "inner".to_string(),
+                BqType::Record(inner_nested),
+                BqMode::Nullable,
+            ),
+        );
+
+        let entry = SchemaEntry::new(
+            "outer".to_string(),
+            BqType::Record(nested),
+            BqMode::Repeated,
+        );
+        let json = entry_to_json(&entry);
+
+        assert!(json.is_array());
+        let arr = json.as_array().unwrap();
+        assert_eq!(arr.len(), 1);
+        assert!(arr[0].is_object());
+        assert!(arr[0].as_object().unwrap().contains_key("inner"));
+    }
+
+    #[test]
+    fn test_watch_state_mixed_file_types() {
+        let dir = tempdir().unwrap();
+
+        // Create JSON file
+        let file1 = dir.path().join("data1.json");
+        File::create(&file1)
+            .unwrap()
+            .write_all(r#"{"int_field": 1}"#.as_bytes())
+            .unwrap();
+
+        // Create another JSON file
+        let file2 = dir.path().join("data2.json");
+        File::create(&file2)
+            .unwrap()
+            .write_all(r#"{"str_field": "hello"}"#.as_bytes())
+            .unwrap();
+
+        let config = GeneratorConfig::default();
+        let watch_config = WatchConfig::default();
+        let files = vec![file1, file2];
+
+        let state = WatchState::new(&files, config, watch_config).unwrap();
+
+        // Both fields should be in schema
+        assert_eq!(state.current_schema().len(), 2);
+        assert!(state.current_schema().iter().any(|f| f.name == "int_field"));
+        assert!(state.current_schema().iter().any(|f| f.name == "str_field"));
+    }
+
+    #[test]
+    fn test_handle_file_delete_all_files() {
+        let dir = tempdir().unwrap();
+
+        // Create single file
+        let file_path = dir.path().join("data.json");
+        File::create(&file_path)
+            .unwrap()
+            .write_all(r#"{"field": 1}"#.as_bytes())
+            .unwrap();
+
+        let config = GeneratorConfig::default();
+        let watch_config = WatchConfig::default();
+        let files = vec![file_path.clone()];
+
+        let mut state = WatchState::new(&files, config, watch_config).unwrap();
+
+        // Delete the file
+        std::fs::remove_file(&file_path).unwrap();
+        let diff = state.handle_file_delete(&file_path);
+
+        // Should have diff showing removed field
+        assert!(diff.is_some());
+
+        // Schema should now be empty
+        assert!(state.current_schema().is_empty());
+    }
 }

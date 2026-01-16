@@ -1406,4 +1406,447 @@ mod tests {
         assert!(result.errors[0].message.contains("STRING"));
         assert!(result.errors[0].message.contains("RECORD"));
     }
+
+    // ===== Additional Coverage Tests =====
+
+    #[test]
+    fn test_validate_nested_record_multiple_levels_with_type_errors() {
+        let schema = vec![make_record_field(
+            "outer",
+            "NULLABLE",
+            vec![make_record_field(
+                "middle",
+                "NULLABLE",
+                vec![make_record_field(
+                    "inner",
+                    "NULLABLE",
+                    vec![
+                        make_field("deep_int", "INTEGER", "REQUIRED"),
+                        make_field("deep_str", "STRING", "NULLABLE"),
+                    ],
+                )],
+            )],
+        )];
+
+        let validator = SchemaValidator::new(&schema, ValidationOptions::default());
+
+        // Test with type mismatch at deepest level
+        let mut result = ValidationResult::new();
+        let record = json!({
+            "outer": {
+                "middle": {
+                    "inner": {
+                        "deep_int": "not an int",
+                        "deep_str": "valid"
+                    }
+                }
+            }
+        });
+        validator.validate_record(&record, 1, &mut result);
+        assert!(!result.valid);
+        assert!(result.errors[0]
+            .path
+            .contains("outer.middle.inner.deep_int"));
+    }
+
+    #[test]
+    fn test_validate_repeated_field_with_objects_mixed_types() {
+        let schema = vec![make_record_field(
+            "items",
+            "REPEATED",
+            vec![
+                make_field("id", "INTEGER", "NULLABLE"),
+                make_field("name", "STRING", "NULLABLE"),
+            ],
+        )];
+
+        let validator = SchemaValidator::new(&schema, ValidationOptions::default());
+
+        // Array with objects where one has wrong type
+        let mut result = ValidationResult::new();
+        let record = json!({
+            "items": [
+                {"id": 1, "name": "first"},
+                {"id": "not-an-int", "name": "second"},
+                {"id": 3, "name": "third"}
+            ]
+        });
+        validator.validate_record(&record, 1, &mut result);
+        assert!(!result.valid);
+        assert!(result.errors[0].path.contains("[1]"));
+    }
+
+    #[test]
+    fn test_validate_repeated_primitives_with_type_errors() {
+        let schema = vec![make_field("numbers", "INTEGER", "REPEATED")];
+
+        let validator = SchemaValidator::new(&schema, ValidationOptions::default());
+
+        // Array with mixed types
+        let mut result = ValidationResult::new();
+        let record = json!({
+            "numbers": [1, 2, "three", 4, "five"]
+        });
+        validator.validate_record(&record, 1, &mut result);
+        assert!(!result.valid);
+        assert!(result.error_count >= 2);
+    }
+
+    #[test]
+    fn test_validate_all_datetime_formats_comprehensive() {
+        let schema = vec![
+            make_field("date", "DATE", "NULLABLE"),
+            make_field("time", "TIME", "NULLABLE"),
+            make_field("timestamp", "TIMESTAMP", "NULLABLE"),
+        ];
+
+        let validator = SchemaValidator::new(&schema, ValidationOptions::default());
+
+        // Valid formats
+        let valid_cases = vec![
+            json!({"date": "2024-01-15", "time": "12:30:45", "timestamp": "2024-01-15T12:30:45"}),
+            json!({"date": "2024-12-31", "time": "23:59:59", "timestamp": "2024-01-15T12:30:45Z"}),
+            json!({"date": "2024-2-1", "time": "1:2:3", "timestamp": "2024-01-15T12:30:45.123456"}),
+        ];
+
+        for case in valid_cases {
+            let mut result = ValidationResult::new();
+            validator.validate_record(&case, 1, &mut result);
+            assert!(result.valid, "Expected valid: {:?}", case);
+        }
+
+        // Invalid formats - completely wrong formats
+        let invalid_cases = vec![
+            ("date", json!({"date": "not-a-date"})),
+            ("timestamp", json!({"timestamp": "not-a-timestamp"})),
+        ];
+
+        for (field, case) in invalid_cases {
+            let mut result = ValidationResult::new();
+            validator.validate_record(&case, 1, &mut result);
+            assert!(!result.valid, "Expected invalid for {}: {:?}", field, case);
+        }
+    }
+
+    #[test]
+    fn test_validate_null_handling_in_arrays() {
+        let schema = vec![
+            make_field("int_array", "INTEGER", "REPEATED"),
+            make_field("str_array", "STRING", "REPEATED"),
+            make_record_field(
+                "record_array",
+                "REPEATED",
+                vec![make_field("id", "INTEGER", "NULLABLE")],
+            ),
+        ];
+
+        let validator = SchemaValidator::new(&schema, ValidationOptions::default());
+
+        // All arrays with nulls should be valid
+        let mut result = ValidationResult::new();
+        let record = json!({
+            "int_array": [1, null, 2, null],
+            "str_array": ["a", null, "b"],
+            "record_array": [{"id": 1}, null, {"id": 2}]
+        });
+        validator.validate_record(&record, 1, &mut result);
+        assert!(result.valid, "Nulls in arrays should be valid");
+    }
+
+    #[test]
+    fn test_validate_type_coercion_failures_strict_mode() {
+        let schema = vec![
+            make_field("int_field", "INTEGER", "NULLABLE"),
+            make_field("float_field", "FLOAT", "NULLABLE"),
+            make_field("bool_field", "BOOLEAN", "NULLABLE"),
+        ];
+
+        let strict_options = ValidationOptions {
+            strict_types: true,
+            ..Default::default()
+        };
+        let validator = SchemaValidator::new(&schema, strict_options);
+
+        // String representations should fail in strict mode
+        let mut result = ValidationResult::new();
+        let record = json!({
+            "int_field": "123",
+            "float_field": "3.14",
+            "bool_field": "true"
+        });
+        validator.validate_record(&record, 1, &mut result);
+        assert!(!result.valid);
+        assert_eq!(result.error_count, 3);
+    }
+
+    #[test]
+    fn test_validate_type_coercion_success_lenient_mode() {
+        let schema = vec![
+            make_field("int_field", "INTEGER", "NULLABLE"),
+            make_field("float_field", "FLOAT", "NULLABLE"),
+            make_field("bool_field", "BOOLEAN", "NULLABLE"),
+            make_field("ts_field", "TIMESTAMP", "NULLABLE"),
+        ];
+
+        let lenient_options = ValidationOptions {
+            strict_types: false,
+            ..Default::default()
+        };
+        let validator = SchemaValidator::new(&schema, lenient_options);
+
+        // String representations should pass in lenient mode
+        let mut result = ValidationResult::new();
+        let record = json!({
+            "int_field": "123",
+            "float_field": "3.14",
+            "bool_field": "true",
+            "ts_field": 1609459200  // Unix timestamp
+        });
+        validator.validate_record(&record, 1, &mut result);
+        assert!(result.valid, "String coercion should work in lenient mode");
+    }
+
+    #[test]
+    fn test_validate_repeated_vs_non_repeated_mode_conflict() {
+        let schema = vec![make_field("tags", "STRING", "REPEATED")];
+
+        let validator = SchemaValidator::new(&schema, ValidationOptions::default());
+
+        // Non-array value for REPEATED field should fail
+        let mut result = ValidationResult::new();
+        let record = json!({"tags": "single-value"});
+        validator.validate_record(&record, 1, &mut result);
+        assert!(!result.valid);
+        assert!(result.errors[0].message.contains("ARRAY"));
+    }
+
+    #[test]
+    fn test_validate_u64_max_value_for_integer() {
+        let schema = vec![make_field("big_int", "INTEGER", "NULLABLE")];
+
+        let validator = SchemaValidator::new(&schema, ValidationOptions::default());
+
+        // u64::MAX as number
+        let mut result = ValidationResult::new();
+        let record = json!({"big_int": 18446744073709551615_u64});
+        validator.validate_record(&record, 1, &mut result);
+        // u64 should be valid as it can be represented as u64
+        assert!(result.valid);
+    }
+
+    #[test]
+    fn test_validate_nested_record_with_unknown_fields() {
+        let schema = vec![make_record_field(
+            "user",
+            "NULLABLE",
+            vec![
+                make_field("id", "INTEGER", "NULLABLE"),
+                make_record_field(
+                    "profile",
+                    "NULLABLE",
+                    vec![make_field("name", "STRING", "NULLABLE")],
+                ),
+            ],
+        )];
+
+        let validator = SchemaValidator::new(&schema, ValidationOptions::default());
+
+        // Unknown fields at different nesting levels
+        let mut result = ValidationResult::new();
+        let record = json!({
+            "user": {
+                "id": 1,
+                "unknown_top": "should fail",
+                "profile": {
+                    "name": "test",
+                    "unknown_nested": "should also fail"
+                }
+            }
+        });
+        validator.validate_record(&record, 1, &mut result);
+        assert!(!result.valid);
+        assert!(result.error_count >= 2);
+    }
+
+    #[test]
+    fn test_validate_max_errors_stops_early() {
+        let schema = vec![
+            make_field("a", "INTEGER", "NULLABLE"),
+            make_field("b", "INTEGER", "NULLABLE"),
+            make_field("c", "INTEGER", "NULLABLE"),
+            make_field("d", "INTEGER", "NULLABLE"),
+            make_field("e", "INTEGER", "NULLABLE"),
+        ];
+
+        let options = ValidationOptions {
+            max_errors: 2,
+            ..Default::default()
+        };
+        let validator = SchemaValidator::new(&schema, options);
+
+        // All fields have wrong types
+        let mut result = ValidationResult::new();
+        let record = json!({
+            "a": "x",
+            "b": "y",
+            "c": "z",
+            "d": "w",
+            "e": "v"
+        });
+        validator.validate_record(&record, 1, &mut result);
+
+        // Should stop at max_errors
+        assert_eq!(result.error_count, 2);
+    }
+
+    #[test]
+    fn test_validate_record_with_non_object_nested() {
+        let schema = vec![make_record_field(
+            "data",
+            "NULLABLE",
+            vec![make_field("value", "STRING", "NULLABLE")],
+        )];
+
+        let validator = SchemaValidator::new(&schema, ValidationOptions::default());
+
+        // Array where RECORD is expected
+        let mut result1 = ValidationResult::new();
+        let record1 = json!({"data": [1, 2, 3]});
+        validator.validate_record(&record1, 1, &mut result1);
+        assert!(!result1.valid);
+        assert!(result1.errors[0].message.contains("RECORD"));
+
+        // String where RECORD is expected
+        let mut result2 = ValidationResult::new();
+        let record2 = json!({"data": "not an object"});
+        validator.validate_record(&record2, 1, &mut result2);
+        assert!(!result2.valid);
+
+        // Number where RECORD is expected
+        let mut result3 = ValidationResult::new();
+        let record3 = json!({"data": 123});
+        validator.validate_record(&record3, 1, &mut result3);
+        assert!(!result3.valid);
+    }
+
+    #[test]
+    fn test_validate_boolean_string_variations() {
+        let schema = vec![make_field("flag", "BOOLEAN", "NULLABLE")];
+
+        let validator = SchemaValidator::new(&schema, ValidationOptions::default());
+
+        // Various boolean string representations
+        let valid_values = vec!["true", "false", "True", "False", "TRUE", "FALSE"];
+        for val in valid_values {
+            let mut result = ValidationResult::new();
+            let record = json!({"flag": val});
+            validator.validate_record(&record, 1, &mut result);
+            assert!(result.valid, "Boolean string '{}' should be valid", val);
+        }
+
+        // Invalid boolean strings
+        let invalid_values = vec!["yes", "no", "1", "0", "on", "off"];
+        for val in invalid_values {
+            let mut result = ValidationResult::new();
+            let record = json!({"flag": val});
+            validator.validate_record(&record, 1, &mut result);
+            assert!(!result.valid, "Boolean string '{}' should be invalid", val);
+        }
+    }
+
+    #[test]
+    fn test_validate_float_accepts_integer() {
+        let schema = vec![make_field("amount", "FLOAT", "NULLABLE")];
+
+        let validator = SchemaValidator::new(&schema, ValidationOptions::default());
+
+        // Integer should be valid for FLOAT field
+        let mut result = ValidationResult::new();
+        let record = json!({"amount": 42});
+        validator.validate_record(&record, 1, &mut result);
+        assert!(result.valid, "Integer should be valid for FLOAT field");
+    }
+
+    #[test]
+    fn test_validate_integer_string_with_leading_zeros() {
+        let schema = vec![make_field("code", "INTEGER", "NULLABLE")];
+
+        let validator = SchemaValidator::new(&schema, ValidationOptions::default());
+
+        // String integers with various formats
+        let mut result = ValidationResult::new();
+        let record = json!({"code": "00123"});
+        validator.validate_record(&record, 1, &mut result);
+        assert!(
+            result.valid,
+            "Integer string with leading zeros should be valid"
+        );
+    }
+
+    #[test]
+    fn test_validate_float_string_scientific_notation() {
+        let schema = vec![make_field("value", "FLOAT", "NULLABLE")];
+
+        let validator = SchemaValidator::new(&schema, ValidationOptions::default());
+
+        // Scientific notation strings
+        let valid_floats = vec!["1e10", "1.5e-3", "3.14E+2", "-1.5e10"];
+        for val in valid_floats {
+            let mut result = ValidationResult::new();
+            let record = json!({"value": val});
+            validator.validate_record(&record, 1, &mut result);
+            assert!(result.valid, "Float string '{}' should be valid", val);
+        }
+    }
+
+    #[test]
+    fn test_validation_result_reached_max_errors() {
+        let mut result = ValidationResult::new();
+        assert!(!result.reached_max_errors(10));
+
+        for i in 0..10 {
+            result.add_error(ValidationError::missing_required(i, "field"));
+        }
+        assert!(result.reached_max_errors(10));
+        assert!(!result.reached_max_errors(11));
+    }
+
+    #[test]
+    fn test_validate_json_data_all_valid() {
+        let schema = vec![make_field("name", "STRING", "REQUIRED")];
+
+        let input = r#"{"name": "valid"}
+{"name": "also valid"}"#;
+
+        let result = validate_json_data(
+            std::io::Cursor::new(input),
+            &schema,
+            ValidationOptions::default(),
+        )
+        .unwrap();
+
+        // All records are valid
+        assert!(result.valid);
+        assert_eq!(result.error_count, 0);
+    }
+
+    #[test]
+    fn test_validate_json_data_missing_required() {
+        let schema = vec![make_field("name", "STRING", "REQUIRED")];
+
+        let input = r#"{"name": "valid"}
+{"wrong_field": "missing required"}
+{"name": "also valid"}"#;
+
+        let result = validate_json_data(
+            std::io::Cursor::new(input),
+            &schema,
+            ValidationOptions::default(),
+        )
+        .unwrap();
+
+        // Should have error for missing required field
+        assert!(!result.valid);
+        assert!(result.error_count >= 1);
+    }
 }

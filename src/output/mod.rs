@@ -514,4 +514,625 @@ mod tests {
         );
         assert!("invalid".parse::<OutputFormat>().is_err());
     }
+
+    // ===== DDL Output Tests =====
+
+    #[test]
+    fn test_ddl_output_all_types() {
+        let schema = vec![
+            BqSchemaField::new(
+                "str_field".to_string(),
+                "STRING".to_string(),
+                "NULLABLE".to_string(),
+            ),
+            BqSchemaField::new(
+                "int_field".to_string(),
+                "INTEGER".to_string(),
+                "NULLABLE".to_string(),
+            ),
+            BqSchemaField::new(
+                "float_field".to_string(),
+                "FLOAT".to_string(),
+                "NULLABLE".to_string(),
+            ),
+            BqSchemaField::new(
+                "bool_field".to_string(),
+                "BOOLEAN".to_string(),
+                "NULLABLE".to_string(),
+            ),
+            BqSchemaField::new(
+                "ts_field".to_string(),
+                "TIMESTAMP".to_string(),
+                "NULLABLE".to_string(),
+            ),
+            BqSchemaField::new(
+                "date_field".to_string(),
+                "DATE".to_string(),
+                "NULLABLE".to_string(),
+            ),
+            BqSchemaField::new(
+                "time_field".to_string(),
+                "TIME".to_string(),
+                "NULLABLE".to_string(),
+            ),
+            BqSchemaField::new(
+                "datetime_field".to_string(),
+                "DATETIME".to_string(),
+                "NULLABLE".to_string(),
+            ),
+            BqSchemaField::new(
+                "bytes_field".to_string(),
+                "BYTES".to_string(),
+                "NULLABLE".to_string(),
+            ),
+        ];
+
+        let mut output = Vec::new();
+        write_schema_ddl(&schema, "test.all_types", &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+
+        assert!(output_str.contains("str_field STRING"));
+        assert!(output_str.contains("int_field INT64"));
+        assert!(output_str.contains("float_field FLOAT64"));
+        assert!(output_str.contains("bool_field BOOL"));
+        assert!(output_str.contains("ts_field TIMESTAMP"));
+        assert!(output_str.contains("date_field DATE"));
+        assert!(output_str.contains("time_field TIME"));
+        assert!(output_str.contains("datetime_field DATETIME"));
+        assert!(output_str.contains("bytes_field BYTES"));
+    }
+
+    #[test]
+    fn test_ddl_output_repeated_record() {
+        let schema = vec![BqSchemaField::record(
+            "items".to_string(),
+            "REPEATED".to_string(),
+            vec![
+                BqSchemaField::new(
+                    "id".to_string(),
+                    "INTEGER".to_string(),
+                    "NULLABLE".to_string(),
+                ),
+                BqSchemaField::new(
+                    "name".to_string(),
+                    "STRING".to_string(),
+                    "NULLABLE".to_string(),
+                ),
+            ],
+        )];
+
+        let mut output = Vec::new();
+        write_schema_ddl(&schema, "test.repeated_record", &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+
+        assert!(output_str.contains("ARRAY<STRUCT<"));
+        assert!(output_str.contains("id INT64"));
+        assert!(output_str.contains("name STRING"));
+    }
+
+    #[test]
+    fn test_ddl_output_deeply_nested_records() {
+        let schema = vec![BqSchemaField::record(
+            "level1".to_string(),
+            "NULLABLE".to_string(),
+            vec![BqSchemaField::record(
+                "level2".to_string(),
+                "NULLABLE".to_string(),
+                vec![BqSchemaField::record(
+                    "level3".to_string(),
+                    "NULLABLE".to_string(),
+                    vec![BqSchemaField::new(
+                        "deep_value".to_string(),
+                        "STRING".to_string(),
+                        "NULLABLE".to_string(),
+                    )],
+                )],
+            )],
+        )];
+
+        let mut output = Vec::new();
+        write_schema_ddl(&schema, "test.nested", &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+
+        assert!(output_str.contains("level1 STRUCT<"));
+        assert!(output_str.contains("level2 STRUCT<"));
+        assert!(output_str.contains("level3 STRUCT<"));
+        assert!(output_str.contains("deep_value STRING"));
+    }
+
+    #[test]
+    fn test_ddl_output_required_record() {
+        let schema = vec![BqSchemaField::record(
+            "required_record".to_string(),
+            "REQUIRED".to_string(),
+            vec![BqSchemaField::new(
+                "field".to_string(),
+                "STRING".to_string(),
+                "NULLABLE".to_string(),
+            )],
+        )];
+
+        let mut output = Vec::new();
+        write_schema_ddl(&schema, "test.required", &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+
+        assert!(output_str.contains("STRUCT<"));
+        assert!(output_str.contains("NOT NULL"));
+    }
+
+    #[test]
+    fn test_ddl_output_repeated_primitive() {
+        let schema = vec![
+            BqSchemaField::new(
+                "int_array".to_string(),
+                "INTEGER".to_string(),
+                "REPEATED".to_string(),
+            ),
+            BqSchemaField::new(
+                "str_array".to_string(),
+                "STRING".to_string(),
+                "REPEATED".to_string(),
+            ),
+        ];
+
+        let mut output = Vec::new();
+        write_schema_ddl(&schema, "test.arrays", &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+
+        assert!(output_str.contains("int_array ARRAY<INT64>"));
+        assert!(output_str.contains("str_array ARRAY<STRING>"));
+    }
+
+    #[test]
+    fn test_ddl_output_nested_repeated_in_record() {
+        let schema = vec![BqSchemaField::record(
+            "parent".to_string(),
+            "NULLABLE".to_string(),
+            vec![
+                BqSchemaField::new(
+                    "tags".to_string(),
+                    "STRING".to_string(),
+                    "REPEATED".to_string(),
+                ),
+                BqSchemaField::record(
+                    "children".to_string(),
+                    "REPEATED".to_string(),
+                    vec![BqSchemaField::new(
+                        "child_id".to_string(),
+                        "INTEGER".to_string(),
+                        "NULLABLE".to_string(),
+                    )],
+                ),
+            ],
+        )];
+
+        let mut output = Vec::new();
+        write_schema_ddl(&schema, "test.nested_arrays", &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+
+        assert!(output_str.contains("tags ARRAY<STRING>"));
+        assert!(output_str.contains("children ARRAY<STRUCT<"));
+    }
+
+    // ===== JSON Schema Output Tests =====
+
+    #[test]
+    fn test_json_schema_primitives_comprehensive() {
+        let schema = vec![
+            BqSchemaField::new(
+                "str".to_string(),
+                "STRING".to_string(),
+                "NULLABLE".to_string(),
+            ),
+            BqSchemaField::new(
+                "int".to_string(),
+                "INTEGER".to_string(),
+                "NULLABLE".to_string(),
+            ),
+            BqSchemaField::new(
+                "float".to_string(),
+                "FLOAT".to_string(),
+                "NULLABLE".to_string(),
+            ),
+            BqSchemaField::new(
+                "bool".to_string(),
+                "BOOLEAN".to_string(),
+                "NULLABLE".to_string(),
+            ),
+            BqSchemaField::new(
+                "bytes".to_string(),
+                "BYTES".to_string(),
+                "NULLABLE".to_string(),
+            ),
+        ];
+
+        let mut output = Vec::new();
+        write_schema_json_schema(&schema, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&output_str).unwrap();
+
+        assert_eq!(parsed["properties"]["str"]["type"], "string");
+        assert_eq!(parsed["properties"]["int"]["type"], "integer");
+        assert_eq!(parsed["properties"]["float"]["type"], "number");
+        assert_eq!(parsed["properties"]["bool"]["type"], "boolean");
+        assert_eq!(parsed["properties"]["bytes"]["type"], "string");
+    }
+
+    #[test]
+    fn test_json_schema_arrays() {
+        let schema = vec![
+            BqSchemaField::new(
+                "string_arr".to_string(),
+                "STRING".to_string(),
+                "REPEATED".to_string(),
+            ),
+            BqSchemaField::new(
+                "int_arr".to_string(),
+                "INTEGER".to_string(),
+                "REPEATED".to_string(),
+            ),
+        ];
+
+        let mut output = Vec::new();
+        write_schema_json_schema(&schema, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&output_str).unwrap();
+
+        assert_eq!(parsed["properties"]["string_arr"]["type"], "array");
+        assert_eq!(
+            parsed["properties"]["string_arr"]["items"]["type"],
+            "string"
+        );
+        assert_eq!(parsed["properties"]["int_arr"]["type"], "array");
+        assert_eq!(parsed["properties"]["int_arr"]["items"]["type"], "integer");
+    }
+
+    #[test]
+    fn test_json_schema_nested_records() {
+        let schema = vec![BqSchemaField::record(
+            "user".to_string(),
+            "NULLABLE".to_string(),
+            vec![
+                BqSchemaField::new(
+                    "name".to_string(),
+                    "STRING".to_string(),
+                    "REQUIRED".to_string(),
+                ),
+                BqSchemaField::record(
+                    "address".to_string(),
+                    "NULLABLE".to_string(),
+                    vec![
+                        BqSchemaField::new(
+                            "city".to_string(),
+                            "STRING".to_string(),
+                            "NULLABLE".to_string(),
+                        ),
+                        BqSchemaField::new(
+                            "zip".to_string(),
+                            "STRING".to_string(),
+                            "NULLABLE".to_string(),
+                        ),
+                    ],
+                ),
+            ],
+        )];
+
+        let mut output = Vec::new();
+        write_schema_json_schema(&schema, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&output_str).unwrap();
+
+        assert_eq!(parsed["properties"]["user"]["type"], "object");
+        assert_eq!(
+            parsed["properties"]["user"]["properties"]["name"]["type"],
+            "string"
+        );
+        assert_eq!(
+            parsed["properties"]["user"]["properties"]["address"]["type"],
+            "object"
+        );
+        assert!(parsed["properties"]["user"]["required"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("name")));
+    }
+
+    #[test]
+    fn test_json_schema_date_time_formats() {
+        let schema = vec![
+            BqSchemaField::new(
+                "date_field".to_string(),
+                "DATE".to_string(),
+                "NULLABLE".to_string(),
+            ),
+            BqSchemaField::new(
+                "time_field".to_string(),
+                "TIME".to_string(),
+                "NULLABLE".to_string(),
+            ),
+            BqSchemaField::new(
+                "ts_field".to_string(),
+                "TIMESTAMP".to_string(),
+                "NULLABLE".to_string(),
+            ),
+            BqSchemaField::new(
+                "dt_field".to_string(),
+                "DATETIME".to_string(),
+                "NULLABLE".to_string(),
+            ),
+        ];
+
+        let mut output = Vec::new();
+        write_schema_json_schema(&schema, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&output_str).unwrap();
+
+        // All date/time types should be represented as strings in JSON Schema
+        assert_eq!(parsed["properties"]["date_field"]["type"], "string");
+        assert_eq!(parsed["properties"]["time_field"]["type"], "string");
+        assert_eq!(parsed["properties"]["ts_field"]["type"], "string");
+        assert_eq!(parsed["properties"]["dt_field"]["type"], "string");
+    }
+
+    #[test]
+    fn test_json_schema_repeated_records() {
+        let schema = vec![BqSchemaField::record(
+            "items".to_string(),
+            "REPEATED".to_string(),
+            vec![
+                BqSchemaField::new(
+                    "id".to_string(),
+                    "INTEGER".to_string(),
+                    "REQUIRED".to_string(),
+                ),
+                BqSchemaField::new(
+                    "value".to_string(),
+                    "FLOAT".to_string(),
+                    "NULLABLE".to_string(),
+                ),
+            ],
+        )];
+
+        let mut output = Vec::new();
+        write_schema_json_schema(&schema, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&output_str).unwrap();
+
+        assert_eq!(parsed["properties"]["items"]["type"], "array");
+        assert_eq!(parsed["properties"]["items"]["items"]["type"], "object");
+        assert_eq!(
+            parsed["properties"]["items"]["items"]["properties"]["id"]["type"],
+            "integer"
+        );
+        assert!(parsed["properties"]["items"]["items"]["required"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("id")));
+    }
+
+    #[test]
+    fn test_json_schema_required_fields_at_root() {
+        let schema = vec![
+            BqSchemaField::new(
+                "required_field".to_string(),
+                "STRING".to_string(),
+                "REQUIRED".to_string(),
+            ),
+            BqSchemaField::new(
+                "optional_field".to_string(),
+                "STRING".to_string(),
+                "NULLABLE".to_string(),
+            ),
+        ];
+
+        let mut output = Vec::new();
+        write_schema_json_schema(&schema, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&output_str).unwrap();
+
+        let required = parsed["required"].as_array().unwrap();
+        assert!(required.contains(&serde_json::json!("required_field")));
+        assert!(!required.contains(&serde_json::json!("optional_field")));
+    }
+
+    #[test]
+    fn test_json_schema_empty_schema() {
+        let schema: Vec<BqSchemaField> = vec![];
+
+        let mut output = Vec::new();
+        write_schema_json_schema(&schema, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&output_str).unwrap();
+
+        assert_eq!(parsed["type"], "object");
+        assert!(parsed["properties"].as_object().unwrap().is_empty());
+        assert!(parsed.get("required").is_none());
+    }
+
+    // ===== Debug Map Output Tests =====
+
+    #[test]
+    fn test_debug_map_output() {
+        use crate::schema::types::{BqMode, BqType, EntryStatus, SchemaEntry, SchemaMap};
+
+        let mut schema_map = SchemaMap::new();
+        schema_map.insert(
+            "test_field".to_string(),
+            SchemaEntry {
+                status: EntryStatus::Hard,
+                filled: true,
+                name: "test_field".to_string(),
+                bq_type: BqType::String,
+                mode: BqMode::Nullable,
+            },
+        );
+
+        let mut output = Vec::new();
+        write_schema_debug_map(&schema_map, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&output_str).unwrap();
+
+        assert!(parsed["test_field"]["status"]
+            .as_str()
+            .unwrap()
+            .contains("Hard"));
+        assert_eq!(parsed["test_field"]["filled"], true);
+        assert_eq!(parsed["test_field"]["bq_type"], "STRING");
+        assert_eq!(parsed["test_field"]["mode"], "NULLABLE");
+    }
+
+    #[test]
+    fn test_debug_map_with_record() {
+        use crate::schema::types::{BqMode, BqType, EntryStatus, SchemaEntry, SchemaMap};
+
+        let mut nested_map = SchemaMap::new();
+        nested_map.insert(
+            "nested_field".to_string(),
+            SchemaEntry {
+                status: EntryStatus::Hard,
+                filled: true,
+                name: "nested_field".to_string(),
+                bq_type: BqType::Integer,
+                mode: BqMode::Nullable,
+            },
+        );
+
+        let mut schema_map = SchemaMap::new();
+        schema_map.insert(
+            "record_field".to_string(),
+            SchemaEntry {
+                status: EntryStatus::Hard,
+                filled: true,
+                name: "record_field".to_string(),
+                bq_type: BqType::Record(nested_map),
+                mode: BqMode::Nullable,
+            },
+        );
+
+        let mut output = Vec::new();
+        write_schema_debug_map(&schema_map, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&output_str).unwrap();
+
+        assert!(parsed["record_field"]["fields"].is_object());
+        assert!(parsed["record_field"]["fields"]["nested_field"].is_object());
+    }
+
+    #[test]
+    fn test_debug_map_all_entry_statuses() {
+        use crate::schema::types::{BqMode, BqType, EntryStatus, SchemaEntry, SchemaMap};
+
+        let mut schema_map = SchemaMap::new();
+        schema_map.insert(
+            "hard".to_string(),
+            SchemaEntry {
+                status: EntryStatus::Hard,
+                filled: true,
+                name: "hard".to_string(),
+                bq_type: BqType::String,
+                mode: BqMode::Nullable,
+            },
+        );
+        schema_map.insert(
+            "soft".to_string(),
+            SchemaEntry {
+                status: EntryStatus::Soft,
+                filled: false,
+                name: "soft".to_string(),
+                bq_type: BqType::Null,
+                mode: BqMode::Nullable,
+            },
+        );
+        schema_map.insert(
+            "ignore".to_string(),
+            SchemaEntry {
+                status: EntryStatus::Ignore,
+                filled: false,
+                name: "ignore".to_string(),
+                bq_type: BqType::String,
+                mode: BqMode::Nullable,
+            },
+        );
+
+        let mut output = Vec::new();
+        write_schema_debug_map(&schema_map, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&output_str).unwrap();
+
+        assert!(parsed["hard"]["status"].as_str().unwrap().contains("Hard"));
+        assert!(parsed["soft"]["status"].as_str().unwrap().contains("Soft"));
+        assert!(parsed["ignore"]["status"]
+            .as_str()
+            .unwrap()
+            .contains("Ignore"));
+    }
+
+    // ===== Output Format Parsing Tests =====
+
+    #[test]
+    fn test_output_format_case_insensitive() {
+        assert_eq!("JSON".parse::<OutputFormat>().unwrap(), OutputFormat::Json);
+        assert_eq!("Json".parse::<OutputFormat>().unwrap(), OutputFormat::Json);
+        assert_eq!("DDL".parse::<OutputFormat>().unwrap(), OutputFormat::Ddl);
+        assert_eq!(
+            "DEBUG-MAP".parse::<OutputFormat>().unwrap(),
+            OutputFormat::DebugMap
+        );
+        assert_eq!(
+            "JSON-SCHEMA".parse::<OutputFormat>().unwrap(),
+            OutputFormat::JsonSchema
+        );
+    }
+
+    #[test]
+    fn test_output_format_debug_map_variants() {
+        assert_eq!(
+            "debug-map".parse::<OutputFormat>().unwrap(),
+            OutputFormat::DebugMap
+        );
+        assert_eq!(
+            "debug_map".parse::<OutputFormat>().unwrap(),
+            OutputFormat::DebugMap
+        );
+        assert_eq!(
+            "debugmap".parse::<OutputFormat>().unwrap(),
+            OutputFormat::DebugMap
+        );
+    }
+
+    #[test]
+    fn test_output_format_json_schema_variants() {
+        assert_eq!(
+            "json-schema".parse::<OutputFormat>().unwrap(),
+            OutputFormat::JsonSchema
+        );
+        assert_eq!(
+            "json_schema".parse::<OutputFormat>().unwrap(),
+            OutputFormat::JsonSchema
+        );
+        assert_eq!(
+            "jsonschema".parse::<OutputFormat>().unwrap(),
+            OutputFormat::JsonSchema
+        );
+    }
+
+    #[test]
+    fn test_schema_to_json_string() {
+        let schema = vec![BqSchemaField::new(
+            "test".to_string(),
+            "STRING".to_string(),
+            "NULLABLE".to_string(),
+        )];
+
+        let json_str = schema_to_json_string(&schema).unwrap();
+        assert!(json_str.contains("\"name\": \"test\""));
+        assert!(json_str.contains("\"type\": \"STRING\""));
+    }
+
+    #[test]
+    fn test_bq_type_to_standard_sql_fallback() {
+        // Test the fallback case for unknown types
+        let result = bq_type_to_standard_sql("UNKNOWN_TYPE");
+        assert_eq!(result, "STRING");
+    }
 }

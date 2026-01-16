@@ -628,4 +628,208 @@ mod tests {
 
         assert!(output_str.contains("parent.new_child") || output_str.contains("new_child"));
     }
+
+    // ===== Additional Coverage Tests =====
+
+    #[test]
+    fn test_color_mode_from_str() {
+        assert_eq!("auto".parse::<ColorMode>().unwrap(), ColorMode::Auto);
+        assert_eq!("always".parse::<ColorMode>().unwrap(), ColorMode::Always);
+        assert_eq!("never".parse::<ColorMode>().unwrap(), ColorMode::Never);
+        assert!("invalid".parse::<ColorMode>().is_err());
+    }
+
+    #[test]
+    fn test_color_mode_case_insensitive() {
+        assert_eq!("AUTO".parse::<ColorMode>().unwrap(), ColorMode::Auto);
+        assert_eq!("ALWAYS".parse::<ColorMode>().unwrap(), ColorMode::Always);
+        assert_eq!("NEVER".parse::<ColorMode>().unwrap(), ColorMode::Never);
+        assert_eq!("Auto".parse::<ColorMode>().unwrap(), ColorMode::Auto);
+    }
+
+    #[test]
+    fn test_diff_format_case_insensitive() {
+        assert_eq!("TEXT".parse::<DiffFormat>().unwrap(), DiffFormat::Text);
+        assert_eq!("JSON".parse::<DiffFormat>().unwrap(), DiffFormat::Json);
+        assert_eq!(
+            "JSON-PATCH".parse::<DiffFormat>().unwrap(),
+            DiffFormat::JsonPatch
+        );
+        assert_eq!("SQL".parse::<DiffFormat>().unwrap(), DiffFormat::Sql);
+    }
+
+    #[test]
+    fn test_sql_diff_required_field_addition() {
+        let old = vec![];
+        let new = vec![make_field("required_field", "STRING", "REQUIRED")];
+
+        let diff = diff_schemas(&old, &new, &DiffOptions::default());
+        let mut output = Vec::new();
+        write_diff(&diff, DiffFormat::Sql, ColorMode::Never, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+
+        assert!(output_str.contains("ADD COLUMN"));
+        assert!(output_str.contains("NOT NULL"));
+    }
+
+    #[test]
+    fn test_sql_diff_nullable_field_addition() {
+        let old = vec![];
+        let new = vec![make_field("nullable_field", "STRING", "NULLABLE")];
+
+        let diff = diff_schemas(&old, &new, &DiffOptions::default());
+        let mut output = Vec::new();
+        write_diff(&diff, DiffFormat::Sql, ColorMode::Never, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+
+        assert!(output_str.contains("ADD COLUMN"));
+        // NULLABLE shouldn't have NOT NULL
+        assert!(!output_str.contains("NOT NULL"));
+    }
+
+    #[test]
+    fn test_text_diff_breaking_modification() {
+        let old = vec![make_field("field", "STRING", "NULLABLE")];
+        let new = vec![make_field("field", "STRING", "REQUIRED")];
+
+        let diff = diff_schemas(&old, &new, &DiffOptions::default());
+        let mut output = Vec::new();
+        write_diff(&diff, DiffFormat::Text, ColorMode::Never, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+
+        assert!(output_str.contains("Modified Fields"));
+        assert!(output_str.contains("[BREAKING]"));
+    }
+
+    #[test]
+    fn test_text_diff_non_breaking_modification() {
+        let old = vec![make_field("field", "INTEGER", "NULLABLE")];
+        let new = vec![make_field("field", "FLOAT", "NULLABLE")];
+
+        let diff = diff_schemas(&old, &new, &DiffOptions::default());
+        let mut output = Vec::new();
+        write_diff(&diff, DiffFormat::Text, ColorMode::Never, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+
+        assert!(output_str.contains("Modified Fields"));
+        // Integer to Float is not breaking in BigQuery
+        // The test checks that the output contains the change
+    }
+
+    #[test]
+    fn test_diff_format_default() {
+        let default_format = DiffFormat::default();
+        assert_eq!(default_format, DiffFormat::Text);
+    }
+
+    #[test]
+    fn test_color_mode_default() {
+        let default_mode = ColorMode::default();
+        assert_eq!(default_mode, ColorMode::Auto);
+    }
+
+    #[test]
+    fn test_text_diff_summary_with_breaking_count() {
+        // Create a diff with breaking changes
+        let old = vec![
+            make_field("removed1", "STRING", "NULLABLE"),
+            make_field("removed2", "INTEGER", "NULLABLE"),
+        ];
+        let new = vec![];
+
+        let diff = diff_schemas(&old, &new, &DiffOptions::default());
+        let mut output = Vec::new();
+        write_diff(&diff, DiffFormat::Text, ColorMode::Never, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+
+        // Summary should show breaking count
+        assert!(output_str.contains("breaking"));
+        assert!(output_str.contains("removed"));
+    }
+
+    #[test]
+    fn test_sql_diff_non_breaking_modification() {
+        // Non-breaking modification: NULLABLE to NULLABLE (just type change to compatible)
+        let old = vec![make_field("field", "INTEGER", "NULLABLE")];
+        let new = vec![make_field("field", "FLOAT", "NULLABLE")];
+
+        let diff = diff_schemas(&old, &new, &DiffOptions::default());
+        let mut output = Vec::new();
+        write_diff(&diff, DiffFormat::Sql, ColorMode::Never, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+
+        assert!(output_str.contains("MODIFY COLUMN"));
+        // Should have data migration note for type change
+        assert!(output_str.contains("data migration"));
+    }
+
+    #[test]
+    fn test_json_patch_with_nested_field() {
+        let old = vec![BqSchemaField {
+            name: "parent".to_string(),
+            field_type: "RECORD".to_string(),
+            mode: "NULLABLE".to_string(),
+            fields: Some(vec![make_field("child", "STRING", "NULLABLE")]),
+        }];
+        let new = vec![BqSchemaField {
+            name: "parent".to_string(),
+            field_type: "RECORD".to_string(),
+            mode: "NULLABLE".to_string(),
+            fields: Some(vec![
+                make_field("child", "STRING", "NULLABLE"),
+                make_field("new_child", "INTEGER", "NULLABLE"),
+            ]),
+        }];
+
+        let diff = diff_schemas(&old, &new, &DiffOptions::default());
+        let mut output = Vec::new();
+        write_diff(&diff, DiffFormat::JsonPatch, ColorMode::Never, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+
+        let patches: Vec<serde_json::Value> = serde_json::from_str(&output_str).unwrap();
+        assert!(!patches.is_empty());
+        // Should have add operation
+        assert!(patches.iter().any(|p| p["op"] == "add"));
+    }
+
+    #[test]
+    fn test_text_diff_removed_field_with_type_info() {
+        let old = vec![make_field("old_field", "TIMESTAMP", "REQUIRED")];
+        let new = vec![];
+
+        let diff = diff_schemas(&old, &new, &DiffOptions::default());
+        let mut output = Vec::new();
+        write_diff(&diff, DiffFormat::Text, ColorMode::Never, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+
+        assert!(output_str.contains("Removed Fields"));
+        assert!(output_str.contains("old_field"));
+        // Should show type info
+        assert!(output_str.contains("TIMESTAMP") || output_str.contains("REQUIRED"));
+    }
+
+    #[test]
+    fn test_all_formats_produce_output() {
+        let old = vec![make_field("a", "STRING", "NULLABLE")];
+        let new = vec![make_field("b", "INTEGER", "NULLABLE")];
+        let diff = diff_schemas(&old, &new, &DiffOptions::default());
+
+        let formats = [
+            DiffFormat::Text,
+            DiffFormat::Json,
+            DiffFormat::JsonPatch,
+            DiffFormat::Sql,
+        ];
+
+        for format in formats {
+            let mut output = Vec::new();
+            let result = write_diff(&diff, format, ColorMode::Never, &mut output);
+            assert!(result.is_ok(), "Format {:?} failed", format);
+            assert!(
+                !output.is_empty(),
+                "Format {:?} produced empty output",
+                format
+            );
+        }
+    }
 }

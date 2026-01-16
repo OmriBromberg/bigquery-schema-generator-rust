@@ -524,4 +524,303 @@ mod tests {
         assert_eq!(convert_type(&BqType::Integer, &BqType::Boolean), None);
         assert_eq!(convert_type(&BqType::Float, &BqType::String), None);
     }
+
+    // ===== Additional Coverage Tests =====
+
+    #[test]
+    fn test_infer_u64_exceeds_i64_max() {
+        // u64 value greater than i64::MAX should become FLOAT
+        let big_u64 = (i64::MAX as u64) + 1;
+        let json_val = serde_json::json!(big_u64);
+        let result = infer_type_from_json(&json_val, false);
+        assert_eq!(result, Some(BqType::Float));
+
+        // u64 value equal to i64::MAX should be INTEGER
+        let max_i64_as_u64 = i64::MAX as u64;
+        let json_val2 = serde_json::json!(max_i64_as_u64);
+        let result2 = infer_type_from_json(&json_val2, false);
+        assert_eq!(result2, Some(BqType::Integer));
+    }
+
+    #[test]
+    fn test_infer_nested_arrays_not_supported() {
+        // Non-empty nested arrays should return None
+        let nested_arr = json!([[1, 2], [3, 4]]);
+        let result = infer_bigquery_type(&nested_arr, false);
+        assert!(result.is_none(), "Nested arrays should not be supported");
+
+        // Empty nested array should work (becomes EmptyArray in outer array)
+        let arr_with_empty = json!([[], []]);
+        let result2 = infer_bigquery_type(&arr_with_empty, false);
+        // Empty arrays in array should also not be directly supported
+        assert!(
+            result2.is_none() || matches!(result2, Some((BqMode::Repeated, BqType::EmptyArray)))
+        );
+    }
+
+    #[test]
+    fn test_infer_empty_array_elements() {
+        // Array containing only empty arrays
+        let _arr = json!([[], [], []]);
+        let result = infer_array_type(&[json!([]), json!([]), json!([])], false);
+        assert!(result.is_some());
+        assert_eq!(result, Some(BqType::EmptyArray));
+    }
+
+    #[test]
+    fn test_infer_mixed_record_and_empty_record() {
+        // Mix of Record and EmptyRecord should result in Record
+        let record = json!({"field": "value"});
+        let empty_record = json!({});
+
+        // Create array to test
+        let arr = vec![record.clone(), empty_record.clone(), record.clone()];
+        let result = infer_array_type(&arr, false);
+        assert!(result.is_some());
+        // Should be Record (empty record merges with record)
+        assert!(matches!(result, Some(BqType::Record(_))));
+    }
+
+    #[test]
+    fn test_infer_type_from_string_quoted_integer_overflow() {
+        // Integer string that overflows i64 should become QFloat
+        let big_int_str = "99999999999999999999999999999999";
+        let result = infer_type_from_string(big_int_str, false);
+        assert_eq!(result, BqType::QFloat);
+
+        // Negative overflow
+        let neg_big_int_str = "-99999999999999999999999999999999";
+        let result2 = infer_type_from_string(neg_big_int_str, false);
+        assert_eq!(result2, BqType::QFloat);
+    }
+
+    #[test]
+    fn test_infer_bigquery_type_empty_array() {
+        let empty_arr = json!([]);
+        let result = infer_bigquery_type(&empty_arr, false);
+        assert!(result.is_some());
+        let (mode, bq_type) = result.unwrap();
+        assert_eq!(mode, BqMode::Nullable);
+        assert_eq!(bq_type, BqType::EmptyArray);
+    }
+
+    #[test]
+    fn test_infer_array_with_internal_type_rejected() {
+        // Arrays with Null type elements (not EmptyRecord) should be rejected
+        let arr = vec![json!(null), json!(null)];
+        let result = infer_bigquery_type(&json!(arr), false);
+        // Should be rejected since Null is internal type
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_convert_type_record_merging() {
+        // Record + Record -> Record
+        let record1 = BqType::Record(Default::default());
+        let record2 = BqType::Record(Default::default());
+        let result = convert_type(&record1, &record2);
+        assert!(matches!(result, Some(BqType::Record(_))));
+
+        // EmptyRecord + Record -> Record
+        let result2 = convert_type(&BqType::EmptyRecord, &record1);
+        assert!(matches!(result2, Some(BqType::Record(_))));
+
+        // Record + EmptyRecord -> Record
+        let result3 = convert_type(&record1, &BqType::EmptyRecord);
+        assert!(matches!(result3, Some(BqType::Record(_))));
+    }
+
+    #[test]
+    fn test_convert_type_qboolean_combinations() {
+        // QBoolean + QBoolean -> QBoolean (stays quoted)
+        assert_eq!(
+            convert_type(&BqType::QBoolean, &BqType::QBoolean),
+            Some(BqType::QBoolean)
+        );
+
+        // QBoolean + Boolean -> Boolean (upgrades to unquoted)
+        assert_eq!(
+            convert_type(&BqType::QBoolean, &BqType::Boolean),
+            Some(BqType::Boolean)
+        );
+
+        // Boolean + QBoolean -> Boolean (upgrades to unquoted)
+        assert_eq!(
+            convert_type(&BqType::Boolean, &BqType::QBoolean),
+            Some(BqType::Boolean)
+        );
+    }
+
+    #[test]
+    fn test_convert_type_qinteger_combinations() {
+        // QInteger + QInteger -> QInteger (stays quoted)
+        assert_eq!(
+            convert_type(&BqType::QInteger, &BqType::QInteger),
+            Some(BqType::QInteger)
+        );
+
+        // QInteger + Integer -> Integer (upgrades to unquoted)
+        assert_eq!(
+            convert_type(&BqType::QInteger, &BqType::Integer),
+            Some(BqType::Integer)
+        );
+
+        // Integer + QInteger -> Integer (upgrades to unquoted)
+        assert_eq!(
+            convert_type(&BqType::Integer, &BqType::QInteger),
+            Some(BqType::Integer)
+        );
+    }
+
+    #[test]
+    fn test_convert_type_qfloat_combinations() {
+        // QFloat + QFloat -> QFloat (stays quoted)
+        assert_eq!(
+            convert_type(&BqType::QFloat, &BqType::QFloat),
+            Some(BqType::QFloat)
+        );
+
+        // QFloat + Float -> Float (upgrades to unquoted)
+        assert_eq!(
+            convert_type(&BqType::QFloat, &BqType::Float),
+            Some(BqType::Float)
+        );
+
+        // Float + QFloat -> Float (upgrades to unquoted)
+        assert_eq!(
+            convert_type(&BqType::Float, &BqType::QFloat),
+            Some(BqType::Float)
+        );
+    }
+
+    #[test]
+    fn test_convert_type_int_float_combinations() {
+        // Integer + Float -> Float
+        assert_eq!(
+            convert_type(&BqType::Integer, &BqType::Float),
+            Some(BqType::Float)
+        );
+
+        // QInteger + Float -> Float
+        assert_eq!(
+            convert_type(&BqType::QInteger, &BqType::Float),
+            Some(BqType::Float)
+        );
+
+        // Integer + QFloat -> Float
+        assert_eq!(
+            convert_type(&BqType::Integer, &BqType::QFloat),
+            Some(BqType::Float)
+        );
+    }
+
+    #[test]
+    fn test_convert_type_string_compatible_merging() {
+        // String + Date -> String
+        assert_eq!(
+            convert_type(&BqType::String, &BqType::Date),
+            Some(BqType::String)
+        );
+
+        // Time + Timestamp -> String
+        assert_eq!(
+            convert_type(&BqType::Time, &BqType::Timestamp),
+            Some(BqType::String)
+        );
+
+        // QInteger + Date -> String
+        assert_eq!(
+            convert_type(&BqType::QInteger, &BqType::Date),
+            Some(BqType::String)
+        );
+
+        // QBoolean + String -> String
+        assert_eq!(
+            convert_type(&BqType::QBoolean, &BqType::String),
+            Some(BqType::String)
+        );
+    }
+
+    #[test]
+    fn test_convert_type_incompatible_combinations() {
+        // Boolean + String -> None (String is not compatible with Boolean)
+        assert_eq!(convert_type(&BqType::Boolean, &BqType::String), None);
+
+        // Integer + String -> None
+        assert_eq!(convert_type(&BqType::Integer, &BqType::String), None);
+
+        // Float + Boolean -> None
+        assert_eq!(convert_type(&BqType::Float, &BqType::Boolean), None);
+
+        // Record + Integer -> None
+        assert_eq!(
+            convert_type(&BqType::Record(Default::default()), &BqType::Integer),
+            None
+        );
+    }
+
+    #[test]
+    fn test_is_boolean_string_case_insensitive() {
+        assert!(is_boolean_string("true"));
+        assert!(is_boolean_string("false"));
+        assert!(is_boolean_string("TRUE"));
+        assert!(is_boolean_string("FALSE"));
+        assert!(is_boolean_string("True"));
+        assert!(is_boolean_string("False"));
+
+        assert!(!is_boolean_string("yes"));
+        assert!(!is_boolean_string("no"));
+        assert!(!is_boolean_string("1"));
+        assert!(!is_boolean_string("0"));
+    }
+
+    #[test]
+    fn test_infer_type_from_json_non_empty_object() {
+        let obj = json!({"key": "value"});
+        let result = infer_type_from_json(&obj, false);
+        assert!(matches!(result, Some(BqType::Record(_))));
+    }
+
+    #[test]
+    fn test_infer_bigquery_type_non_array() {
+        // Non-array values should return Nullable mode
+        let cases = vec![
+            (json!(null), BqType::Null),
+            (json!(true), BqType::Boolean),
+            (json!(42), BqType::Integer),
+            (json!(2.5), BqType::Float),
+            (json!("hello"), BqType::String),
+        ];
+
+        for (value, expected_type) in cases {
+            let result = infer_bigquery_type(&value, false);
+            assert!(result.is_some());
+            let (mode, bq_type) = result.unwrap();
+            assert_eq!(mode, BqMode::Nullable);
+            assert_eq!(bq_type, expected_type);
+        }
+    }
+
+    #[test]
+    fn test_infer_array_type_mixed_integers_floats() {
+        // Array with integers and floats should become FLOAT
+        let arr = vec![json!(1), json!(2.5), json!(3)];
+        let result = infer_array_type(&arr, false);
+        assert_eq!(result, Some(BqType::Float));
+    }
+
+    #[test]
+    fn test_infer_type_datetime_patterns_priority() {
+        // Timestamp pattern should take priority over date
+        let ts = "2024-01-15T12:30:45";
+        assert_eq!(infer_type_from_string(ts, false), BqType::Timestamp);
+
+        // Date only
+        let date = "2024-01-15";
+        assert_eq!(infer_type_from_string(date, false), BqType::Date);
+
+        // Time only
+        let time = "12:30:45";
+        assert_eq!(infer_type_from_string(time, false), BqType::Time);
+    }
 }
