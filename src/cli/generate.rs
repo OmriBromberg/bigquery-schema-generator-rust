@@ -854,4 +854,342 @@ mod tests {
         let json = schema_entry_to_json(&entry);
         assert!(json.is_null());
     }
+
+    #[test]
+    fn test_schema_entry_to_json_date_types() {
+        // Timestamp
+        let entry = make_entry("ts_field", BqType::Timestamp, BqMode::Nullable);
+        let json = schema_entry_to_json(&entry);
+        assert!(json.is_string());
+        assert!(json.as_str().unwrap().contains("2024-01-01"));
+
+        // Date
+        let entry = make_entry("date_field", BqType::Date, BqMode::Nullable);
+        let json = schema_entry_to_json(&entry);
+        assert!(json.is_string());
+        assert_eq!(json.as_str().unwrap(), "2024-01-01");
+
+        // Time
+        let entry = make_entry("time_field", BqType::Time, BqMode::Nullable);
+        let json = schema_entry_to_json(&entry);
+        assert!(json.is_string());
+        assert_eq!(json.as_str().unwrap(), "00:00:00");
+    }
+
+    #[test]
+    fn test_schema_entry_to_json_quoted_types() {
+        // QBoolean
+        let entry = make_entry("qbool_field", BqType::QBoolean, BqMode::Nullable);
+        let json = schema_entry_to_json(&entry);
+        assert!(json.is_boolean());
+
+        // QInteger
+        let entry = make_entry("qint_field", BqType::QInteger, BqMode::Nullable);
+        let json = schema_entry_to_json(&entry);
+        assert!(json.is_number());
+
+        // QFloat
+        let entry = make_entry("qfloat_field", BqType::QFloat, BqMode::Nullable);
+        let json = schema_entry_to_json(&entry);
+        assert!(json.is_number());
+    }
+
+    #[test]
+    fn test_schema_entry_to_json_empty_types() {
+        // EmptyArray
+        let entry = make_entry("empty_arr", BqType::EmptyArray, BqMode::Nullable);
+        let json = schema_entry_to_json(&entry);
+        assert!(json.is_array());
+        assert!(json.as_array().unwrap().is_empty());
+
+        // EmptyRecord
+        let entry = make_entry("empty_rec", BqType::EmptyRecord, BqMode::Nullable);
+        let json = schema_entry_to_json(&entry);
+        assert!(json.is_object());
+        assert!(json.as_object().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_schema_entry_to_json_nested_record() {
+        let nested_field = make_entry("inner", BqType::String, BqMode::Nullable);
+        let mut inner_map = SchemaMap::new();
+        inner_map.insert("inner".to_string(), nested_field);
+
+        let entry = SchemaEntry::new(
+            "outer".to_string(),
+            BqType::Record(inner_map),
+            BqMode::Nullable,
+        );
+        let json = schema_entry_to_json(&entry);
+        assert!(json.is_object());
+        assert!(json.as_object().unwrap().contains_key("inner"));
+    }
+
+    #[test]
+    fn test_schema_entry_to_json_repeated_record() {
+        let nested_field = make_entry("item", BqType::Integer, BqMode::Nullable);
+        let mut inner_map = SchemaMap::new();
+        inner_map.insert("item".to_string(), nested_field);
+
+        let entry = SchemaEntry::new(
+            "items".to_string(),
+            BqType::Record(inner_map),
+            BqMode::Repeated,
+        );
+        let json = schema_entry_to_json(&entry);
+        assert!(json.is_array());
+        assert_eq!(json.as_array().unwrap().len(), 1);
+        assert!(json.as_array().unwrap()[0].is_object());
+    }
+
+    #[test]
+    fn test_merge_schema_maps_overlapping() {
+        let config = GeneratorConfig::default();
+        let mut generator = SchemaGenerator::new(config);
+
+        // Target has string field
+        let mut target = SchemaMap::new();
+        target.insert(
+            "field".to_string(),
+            make_entry("field", BqType::String, BqMode::Nullable),
+        );
+
+        // Source also has same field - merge should work
+        let mut source = SchemaMap::new();
+        source.insert(
+            "field".to_string(),
+            make_entry("field", BqType::String, BqMode::Nullable),
+        );
+
+        merge_schema_maps(&mut generator, &mut target, source);
+        assert!(target.contains_key("field"));
+    }
+
+    #[test]
+    fn test_get_per_file_output_path_no_extension() {
+        // File without extension
+        let input = PathBuf::from("/data/file");
+        let result = get_per_file_output_path(&input, &None);
+        assert_eq!(result, PathBuf::from("/data/file.schema.json"));
+    }
+
+    #[test]
+    fn test_get_per_file_output_path_nested_dir() {
+        let input = PathBuf::from("/a/b/c/file.json");
+        let output_dir = Some(PathBuf::from("/out"));
+        let result = get_per_file_output_path(&input, &output_dir);
+        assert_eq!(result, PathBuf::from("/out/file.schema.json"));
+    }
+
+    #[test]
+    fn test_process_json_input_empty() {
+        let input = std::io::Cursor::new("");
+        let config = GeneratorConfig::default();
+        let mut generator = SchemaGenerator::new(config);
+        let mut schema_map = SchemaMap::new();
+
+        let result = process_json_input(
+            std::io::BufReader::new(input),
+            &mut generator,
+            &mut schema_map,
+            false,
+            1000,
+            true,
+        );
+
+        assert!(result.is_ok());
+        assert!(schema_map.is_empty());
+    }
+
+    #[test]
+    fn test_process_json_input_single_record() {
+        let input = std::io::Cursor::new(r#"{"name": "test", "value": 42}"#);
+        let config = GeneratorConfig::default();
+        let mut generator = SchemaGenerator::new(config);
+        let mut schema_map = SchemaMap::new();
+
+        let result = process_json_input(
+            std::io::BufReader::new(input),
+            &mut generator,
+            &mut schema_map,
+            false,
+            1000,
+            true,
+        );
+
+        assert!(result.is_ok());
+        assert!(schema_map.contains_key("name"));
+        assert!(schema_map.contains_key("value"));
+    }
+
+    #[test]
+    fn test_process_json_input_multiple_records() {
+        let input = std::io::Cursor::new(
+            r#"{"a": 1}
+{"b": 2}
+{"c": 3}"#,
+        );
+        let config = GeneratorConfig::default();
+        let mut generator = SchemaGenerator::new(config);
+        let mut schema_map = SchemaMap::new();
+
+        let result = process_json_input(
+            std::io::BufReader::new(input),
+            &mut generator,
+            &mut schema_map,
+            false,
+            1000,
+            true,
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(schema_map.len(), 3);
+    }
+
+    #[test]
+    fn test_process_json_input_invalid_line_error() {
+        let input = std::io::Cursor::new("invalid json");
+        let config = GeneratorConfig::default();
+        let mut generator = SchemaGenerator::new(config);
+        let mut schema_map = SchemaMap::new();
+
+        let result = process_json_input(
+            std::io::BufReader::new(input),
+            &mut generator,
+            &mut schema_map,
+            false, // Don't ignore invalid lines
+            1000,
+            true,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_process_json_input_ignore_invalid() {
+        let input = std::io::Cursor::new(
+            r#"{"valid": 1}
+invalid json
+{"also_valid": 2}"#,
+        );
+        let config = GeneratorConfig::default();
+        let mut generator = SchemaGenerator::new(config);
+        let mut schema_map = SchemaMap::new();
+
+        let result = process_json_input(
+            std::io::BufReader::new(input),
+            &mut generator,
+            &mut schema_map,
+            true, // Ignore invalid lines
+            1000,
+            true,
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(schema_map.len(), 2);
+    }
+
+    #[test]
+    fn test_process_csv_input_basic() {
+        let input = std::io::Cursor::new("name,value\ntest,42\nfoo,123");
+        let config = GeneratorConfig {
+            input_format: InputFormat::Csv,
+            ..Default::default()
+        };
+        let mut generator = SchemaGenerator::new(config);
+        let mut schema_map = SchemaMap::new();
+
+        let result = process_csv_input(input, &mut generator, &mut schema_map, 1000, true);
+
+        assert!(result.is_ok());
+        assert!(schema_map.contains_key("name"));
+        assert!(schema_map.contains_key("value"));
+    }
+
+    #[test]
+    fn test_process_csv_input_empty_values() {
+        let input = std::io::Cursor::new("a,b,c\n1,,3\n4,5,");
+        let config = GeneratorConfig {
+            input_format: InputFormat::Csv,
+            ..Default::default()
+        };
+        let mut generator = SchemaGenerator::new(config);
+        let mut schema_map = SchemaMap::new();
+
+        let result = process_csv_input(input, &mut generator, &mut schema_map, 1000, true);
+
+        assert!(result.is_ok());
+        assert_eq!(schema_map.len(), 3);
+    }
+
+    #[test]
+    fn test_write_output_json_format() {
+        let config = GeneratorConfig::default();
+        let generator = SchemaGenerator::new(config);
+        let mut schema_map = SchemaMap::new();
+        schema_map.insert(
+            "test".to_string(),
+            make_entry("test", BqType::String, BqMode::Nullable),
+        );
+
+        let mut output = Vec::new();
+        write_output(
+            &generator,
+            &schema_map,
+            &OutputFormat::Json,
+            "test_table",
+            &mut output,
+        );
+
+        let output_str = String::from_utf8(output).unwrap();
+        assert!(output_str.contains("\"name\""));
+        assert!(output_str.contains("\"test\""));
+    }
+
+    #[test]
+    fn test_write_output_ddl_format() {
+        let config = GeneratorConfig::default();
+        let generator = SchemaGenerator::new(config);
+        let mut schema_map = SchemaMap::new();
+        schema_map.insert(
+            "id".to_string(),
+            make_entry("id", BqType::Integer, BqMode::Nullable),
+        );
+
+        let mut output = Vec::new();
+        write_output(
+            &generator,
+            &schema_map,
+            &OutputFormat::Ddl,
+            "my_table",
+            &mut output,
+        );
+
+        let output_str = String::from_utf8(output).unwrap();
+        assert!(output_str.contains("CREATE TABLE"));
+        assert!(output_str.contains("my_table"));
+    }
+
+    #[test]
+    fn test_write_output_debug_map_format() {
+        let config = GeneratorConfig::default();
+        let generator = SchemaGenerator::new(config);
+        let mut schema_map = SchemaMap::new();
+        schema_map.insert(
+            "field".to_string(),
+            make_entry("field", BqType::Boolean, BqMode::Nullable),
+        );
+
+        let mut output = Vec::new();
+        write_output(
+            &generator,
+            &schema_map,
+            &OutputFormat::DebugMap,
+            "table",
+            &mut output,
+        );
+
+        let output_str = String::from_utf8(output).unwrap();
+        assert!(!output_str.is_empty());
+    }
 }

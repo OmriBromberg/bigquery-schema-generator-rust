@@ -86,3 +86,97 @@ fn load_schema_file(path: &Path) -> Vec<BqSchemaField> {
         std::process::exit(1);
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    /// Helper to create a temporary schema file with given content
+    fn create_temp_schema_file(content: &str) -> NamedTempFile {
+        let mut file = NamedTempFile::new().unwrap();
+        file.write_all(content.as_bytes()).unwrap();
+        file.flush().unwrap();
+        file
+    }
+
+    #[test]
+    fn test_load_schema_file_success() {
+        let schema_json = r#"[
+            {"name": "id", "type": "INTEGER", "mode": "REQUIRED"},
+            {"name": "name", "type": "STRING", "mode": "NULLABLE"}
+        ]"#;
+        let file = create_temp_schema_file(schema_json);
+
+        let schema = load_schema_file(file.path());
+        assert_eq!(schema.len(), 2);
+        assert_eq!(schema[0].name, "id");
+        assert_eq!(schema[0].field_type, "INTEGER");
+        assert_eq!(schema[0].mode, "REQUIRED");
+    }
+
+    #[test]
+    fn test_load_schema_file_empty_schema() {
+        let schema_json = "[]";
+        let file = create_temp_schema_file(schema_json);
+
+        let schema = load_schema_file(file.path());
+        assert!(schema.is_empty());
+    }
+
+    #[test]
+    fn test_load_schema_file_with_nested_fields() {
+        let schema_json = r#"[
+            {
+                "name": "metadata",
+                "type": "RECORD",
+                "mode": "NULLABLE",
+                "fields": [
+                    {"name": "created_at", "type": "TIMESTAMP", "mode": "NULLABLE"},
+                    {"name": "updated_at", "type": "TIMESTAMP", "mode": "NULLABLE"}
+                ]
+            }
+        ]"#;
+        let file = create_temp_schema_file(schema_json);
+
+        let schema = load_schema_file(file.path());
+        assert_eq!(schema.len(), 1);
+        assert_eq!(schema[0].name, "metadata");
+        assert_eq!(schema[0].field_type, "RECORD");
+        let nested = schema[0].fields.as_ref().unwrap();
+        assert_eq!(nested.len(), 2);
+        assert_eq!(nested[0].name, "created_at");
+    }
+
+    #[test]
+    fn test_diff_format_parsing() {
+        assert_eq!("text".parse::<DiffFormat>().unwrap(), DiffFormat::Text);
+        assert_eq!("json".parse::<DiffFormat>().unwrap(), DiffFormat::Json);
+        assert_eq!("json-patch".parse::<DiffFormat>().unwrap(), DiffFormat::JsonPatch);
+        assert_eq!("sql".parse::<DiffFormat>().unwrap(), DiffFormat::Sql);
+        assert!("invalid".parse::<DiffFormat>().is_err());
+    }
+
+    #[test]
+    fn test_color_mode_parsing() {
+        assert_eq!("auto".parse::<ColorMode>().unwrap(), ColorMode::Auto);
+        assert_eq!("always".parse::<ColorMode>().unwrap(), ColorMode::Always);
+        assert_eq!("never".parse::<ColorMode>().unwrap(), ColorMode::Never);
+        assert!("invalid".parse::<ColorMode>().is_err());
+    }
+
+    #[test]
+    fn test_diff_format_case_insensitive() {
+        assert_eq!("TEXT".parse::<DiffFormat>().unwrap(), DiffFormat::Text);
+        assert_eq!("Json".parse::<DiffFormat>().unwrap(), DiffFormat::Json);
+        assert_eq!("JSON-PATCH".parse::<DiffFormat>().unwrap(), DiffFormat::JsonPatch);
+    }
+
+    #[test]
+    fn test_color_mode_case_insensitive() {
+        assert_eq!("AUTO".parse::<ColorMode>().unwrap(), ColorMode::Auto);
+        assert_eq!("Always".parse::<ColorMode>().unwrap(), ColorMode::Always);
+        assert_eq!("NEVER".parse::<ColorMode>().unwrap(), ColorMode::Never);
+    }
+}

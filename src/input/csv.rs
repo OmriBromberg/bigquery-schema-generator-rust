@@ -153,4 +153,189 @@ mod tests {
         assert_eq!(records[0].1["b"], "");
         assert_eq!(records[1].1["a"], "");
     }
+
+    #[test]
+    fn test_csv_headers_only() {
+        let input = "header1,header2,header3";
+        let cursor = Cursor::new(input);
+        let iter = CsvRecordIterator::new(cursor).unwrap();
+
+        assert_eq!(iter.headers(), &["header1", "header2", "header3"]);
+
+        let records: Vec<_> = iter.collect();
+        assert!(records.is_empty());
+    }
+
+    #[test]
+    fn test_csv_quoted_fields() {
+        let input = r#"name,description
+"John Doe","A person with a comma, here"
+"Jane","Quotes ""inside"" the field""#;
+        let cursor = Cursor::new(input);
+        let iter = CsvRecordIterator::new(cursor).unwrap();
+        let records: Result<Vec<_>> = iter.collect();
+
+        assert!(records.is_ok());
+        let records = records.unwrap();
+        assert_eq!(records[0].1["description"], "A person with a comma, here");
+        assert!(records[1].1["description"]
+            .as_str()
+            .unwrap()
+            .contains("inside"));
+    }
+
+    #[test]
+    fn test_csv_unicode_content() {
+        let input = "name,city\n日本語,東京\n한국어,서울";
+        let cursor = Cursor::new(input);
+        let iter = CsvRecordIterator::new(cursor).unwrap();
+        let records: Result<Vec<_>> = iter.collect();
+
+        assert!(records.is_ok());
+        let records = records.unwrap();
+        assert_eq!(records[0].1["name"], "日本語");
+        assert_eq!(records[0].1["city"], "東京");
+    }
+
+    #[test]
+    fn test_csv_more_fields_than_headers() {
+        // CSV with more fields than headers - extra fields should be ignored due to flexible mode
+        let input = "a,b\n1,2,3,4";
+        let cursor = Cursor::new(input);
+        let iter = CsvRecordIterator::new(cursor).unwrap();
+        let records: Result<Vec<_>> = iter.collect();
+
+        assert!(records.is_ok());
+        let records = records.unwrap();
+        // Only fields matching headers should be included
+        assert_eq!(records[0].1["a"], "1");
+        assert_eq!(records[0].1["b"], "2");
+    }
+
+    #[test]
+    fn test_csv_fewer_fields_than_headers() {
+        // CSV with fewer fields than headers
+        let input = "a,b,c\n1,2";
+        let cursor = Cursor::new(input);
+        let iter = CsvRecordIterator::new(cursor).unwrap();
+        let records: Result<Vec<_>> = iter.collect();
+
+        assert!(records.is_ok());
+        let records = records.unwrap();
+        // Only provided fields should be in output
+        assert_eq!(records[0].1["a"], "1");
+        assert_eq!(records[0].1["b"], "2");
+        assert!(records[0].1.get("c").is_none());
+    }
+
+    #[test]
+    fn test_csv_line_number_tracking() {
+        let input = "col\na\nb\nc";
+        let cursor = Cursor::new(input);
+        let iter = CsvRecordIterator::new(cursor).unwrap();
+        let records: Vec<_> = iter.collect();
+
+        // Line 1 is header, data starts at line 2
+        assert_eq!(records[0].as_ref().unwrap().0, 2);
+        assert_eq!(records[1].as_ref().unwrap().0, 3);
+        assert_eq!(records[2].as_ref().unwrap().0, 4);
+    }
+
+    #[test]
+    fn test_csv_newlines_in_quoted_fields() {
+        let input = "name,bio\nJohn,\"Line 1\nLine 2\"";
+        let cursor = Cursor::new(input);
+        let iter = CsvRecordIterator::new(cursor).unwrap();
+        let records: Result<Vec<_>> = iter.collect();
+
+        assert!(records.is_ok());
+        let records = records.unwrap();
+        assert!(records[0].1["bio"].as_str().unwrap().contains("\n"));
+    }
+
+    #[test]
+    fn test_csv_whitespace_in_values() {
+        let input = "a,b,c\n  leading,trailing  ,  both  ";
+        let cursor = Cursor::new(input);
+        let iter = CsvRecordIterator::new(cursor).unwrap();
+        let records: Result<Vec<_>> = iter.collect();
+
+        assert!(records.is_ok());
+        let records = records.unwrap();
+        assert_eq!(records[0].1["a"], "  leading");
+        assert_eq!(records[0].1["b"], "trailing  ");
+        assert_eq!(records[0].1["c"], "  both  ");
+    }
+
+    #[test]
+    fn test_csv_single_column() {
+        let input = "single\nvalue1\nvalue2";
+        let cursor = Cursor::new(input);
+        let iter = CsvRecordIterator::new(cursor).unwrap();
+        let records: Result<Vec<_>> = iter.collect();
+
+        assert!(records.is_ok());
+        let records = records.unwrap();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].1["single"], "value1");
+    }
+
+    #[test]
+    fn test_csv_many_columns() {
+        let headers: Vec<String> = (0..100).map(|i| format!("col{}", i)).collect();
+        let values: Vec<String> = (0..100).map(|i| format!("val{}", i)).collect();
+
+        let input = format!("{}\n{}", headers.join(","), values.join(","));
+        let cursor = Cursor::new(input);
+        let iter = CsvRecordIterator::new(cursor).unwrap();
+
+        assert_eq!(iter.headers().len(), 100);
+
+        let records: Result<Vec<_>> = iter.collect();
+        assert!(records.is_ok());
+        let records = records.unwrap();
+        assert_eq!(records[0].1["col0"], "val0");
+        assert_eq!(records[0].1["col99"], "val99");
+    }
+
+    #[test]
+    fn test_csv_numeric_looking_strings() {
+        let input = "id,phone\n123,555-1234\n456,+1 (555) 987-6543";
+        let cursor = Cursor::new(input);
+        let iter = CsvRecordIterator::new(cursor).unwrap();
+        let records: Result<Vec<_>> = iter.collect();
+
+        assert!(records.is_ok());
+        let records = records.unwrap();
+        // All CSV values should be strings
+        assert!(records[0].1["id"].is_string());
+        assert!(records[0].1["phone"].is_string());
+    }
+
+    #[test]
+    fn test_csv_special_header_names() {
+        let input = "has space,has-dash,has.dot\n1,2,3";
+        let cursor = Cursor::new(input);
+        let iter = CsvRecordIterator::new(cursor).unwrap();
+        let records: Result<Vec<_>> = iter.collect();
+
+        assert!(records.is_ok());
+        let records = records.unwrap();
+        assert_eq!(records[0].1["has space"], "1");
+        assert_eq!(records[0].1["has-dash"], "2");
+        assert_eq!(records[0].1["has.dot"], "3");
+    }
+
+    #[test]
+    fn test_csv_empty_file() {
+        let input = "";
+        let cursor = Cursor::new(input);
+        let result = CsvRecordIterator::new(cursor);
+
+        // CSV library handles empty files gracefully with empty headers
+        // This documents the actual behavior
+        assert!(result.is_ok());
+        let iter = result.unwrap();
+        assert!(iter.headers().is_empty());
+    }
 }

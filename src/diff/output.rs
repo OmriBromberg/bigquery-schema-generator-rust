@@ -373,4 +373,259 @@ mod tests {
         assert_eq!("sql".parse::<DiffFormat>().unwrap(), DiffFormat::Sql);
         assert!("invalid".parse::<DiffFormat>().is_err());
     }
+
+    #[test]
+    fn test_write_json_patch_added_field() {
+        let old = vec![];
+        let new = vec![make_field("new_field", "STRING", "NULLABLE")];
+
+        let diff = diff_schemas(&old, &new, &DiffOptions::default());
+        let mut output = Vec::new();
+        write_diff(&diff, DiffFormat::JsonPatch, ColorMode::Never, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+
+        // Should be valid JSON
+        let patches: Vec<serde_json::Value> = serde_json::from_str(&output_str).unwrap();
+        assert_eq!(patches.len(), 1);
+        assert_eq!(patches[0]["op"], "add");
+        assert!(patches[0]["path"].as_str().unwrap().contains("new_field"));
+    }
+
+    #[test]
+    fn test_write_json_patch_removed_field() {
+        let old = vec![make_field("old_field", "STRING", "NULLABLE")];
+        let new = vec![];
+
+        let diff = diff_schemas(&old, &new, &DiffOptions::default());
+        let mut output = Vec::new();
+        write_diff(&diff, DiffFormat::JsonPatch, ColorMode::Never, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+
+        let patches: Vec<serde_json::Value> = serde_json::from_str(&output_str).unwrap();
+        assert_eq!(patches.len(), 1);
+        assert_eq!(patches[0]["op"], "remove");
+        assert!(patches[0]["path"].as_str().unwrap().contains("old_field"));
+    }
+
+    #[test]
+    fn test_write_json_patch_modified_field() {
+        let old = vec![make_field("field", "STRING", "NULLABLE")];
+        let new = vec![make_field("field", "STRING", "REQUIRED")];
+
+        let diff = diff_schemas(&old, &new, &DiffOptions::default());
+        let mut output = Vec::new();
+        write_diff(&diff, DiffFormat::JsonPatch, ColorMode::Never, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+
+        let patches: Vec<serde_json::Value> = serde_json::from_str(&output_str).unwrap();
+        assert_eq!(patches.len(), 1);
+        assert_eq!(patches[0]["op"], "replace");
+        assert_eq!(patches[0]["value"]["mode"], "REQUIRED");
+    }
+
+    #[test]
+    fn test_write_sql_diff_breaking_changes() {
+        let old = vec![make_field("removed_field", "STRING", "NULLABLE")];
+        let new = vec![];
+
+        let diff = diff_schemas(&old, &new, &DiffOptions::default());
+        let mut output = Vec::new();
+        write_diff(&diff, DiffFormat::Sql, ColorMode::Never, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+
+        assert!(output_str.contains("WARNING"));
+        assert!(output_str.contains("breaking"));
+        assert!(output_str.contains("DROP COLUMN"));
+    }
+
+    #[test]
+    fn test_write_sql_diff_non_breaking_changes() {
+        let old = vec![make_field("existing", "STRING", "NULLABLE")];
+        let new = vec![
+            make_field("existing", "STRING", "NULLABLE"),
+            make_field("new_field", "INTEGER", "NULLABLE"),
+        ];
+
+        let diff = diff_schemas(&old, &new, &DiffOptions::default());
+        let mut output = Vec::new();
+        write_diff(&diff, DiffFormat::Sql, ColorMode::Never, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+
+        assert!(output_str.contains("ADD COLUMN"));
+        assert!(output_str.contains("new_field"));
+        // Should not have breaking warning for additions
+        assert!(!output_str.contains("WARNING"));
+    }
+
+    #[test]
+    fn test_write_sql_diff_type_change() {
+        let old = vec![make_field("field", "STRING", "NULLABLE")];
+        let new = vec![make_field("field", "INTEGER", "NULLABLE")];
+
+        let diff = diff_schemas(&old, &new, &DiffOptions::default());
+        let mut output = Vec::new();
+        write_diff(&diff, DiffFormat::Sql, ColorMode::Never, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+
+        assert!(output_str.contains("MODIFY COLUMN"));
+        assert!(output_str.contains("data migration"));
+        assert!(output_str.contains("STRING"));
+        assert!(output_str.contains("INTEGER"));
+    }
+
+    #[test]
+    fn test_write_sql_diff_mode_to_required() {
+        let old = vec![make_field("field", "STRING", "NULLABLE")];
+        let new = vec![make_field("field", "STRING", "REQUIRED")];
+
+        let diff = diff_schemas(&old, &new, &DiffOptions::default());
+        let mut output = Vec::new();
+        write_diff(&diff, DiffFormat::Sql, ColorMode::Never, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+
+        assert!(output_str.contains("REQUIRED"));
+        assert!(output_str.contains("NULL values"));
+    }
+
+    #[test]
+    fn test_write_text_diff_no_changes() {
+        let schema = vec![make_field("field", "STRING", "NULLABLE")];
+
+        let diff = diff_schemas(&schema, &schema, &DiffOptions::default());
+        let mut output = Vec::new();
+        write_diff(&diff, DiffFormat::Text, ColorMode::Never, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+
+        assert!(output_str.contains("No changes detected"));
+    }
+
+    #[test]
+    fn test_write_json_diff_structure() {
+        let old = vec![make_field("a", "STRING", "NULLABLE")];
+        let new = vec![make_field("b", "INTEGER", "NULLABLE")];
+
+        let diff = diff_schemas(&old, &new, &DiffOptions::default());
+        let mut output = Vec::new();
+        write_diff(&diff, DiffFormat::Json, ColorMode::Never, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+
+        let json: serde_json::Value = serde_json::from_str(&output_str).unwrap();
+
+        // Check structure
+        assert!(json.get("summary").is_some());
+        assert!(json.get("changes").is_some());
+        assert!(json["summary"].get("added").is_some());
+        assert!(json["summary"].get("removed").is_some());
+        assert!(json["summary"].get("modified").is_some());
+        assert!(json["summary"].get("breaking").is_some());
+    }
+
+    #[test]
+    fn test_special_characters_in_field_names() {
+        let old = vec![];
+        let new = vec![make_field("field.with.dots", "STRING", "NULLABLE")];
+
+        let diff = diff_schemas(&old, &new, &DiffOptions::default());
+
+        // Test JSON Patch format handles dots correctly
+        let mut output = Vec::new();
+        write_diff(&diff, DiffFormat::JsonPatch, ColorMode::Never, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+        // Path should convert dots to slashes for JSON Pointer format
+        assert!(output_str.contains("/field/with/dots"));
+    }
+
+    #[test]
+    fn test_multiple_changes_combined() {
+        let old = vec![
+            make_field("unchanged", "STRING", "NULLABLE"),
+            make_field("removed", "INTEGER", "NULLABLE"),
+            make_field("modified", "STRING", "NULLABLE"),
+        ];
+        let new = vec![
+            make_field("unchanged", "STRING", "NULLABLE"),
+            make_field("modified", "STRING", "REQUIRED"),
+            make_field("added", "BOOLEAN", "NULLABLE"),
+        ];
+
+        let diff = diff_schemas(&old, &new, &DiffOptions::default());
+
+        // Test text format
+        let mut text_output = Vec::new();
+        write_diff(&diff, DiffFormat::Text, ColorMode::Never, &mut text_output).unwrap();
+        let text_str = String::from_utf8(text_output).unwrap();
+
+        assert!(text_str.contains("Added Fields"));
+        assert!(text_str.contains("Removed Fields"));
+        assert!(text_str.contains("Modified Fields"));
+        assert!(text_str.contains("added"));
+        assert!(text_str.contains("removed"));
+        assert!(text_str.contains("modified"));
+    }
+
+    #[test]
+    fn test_color_mode_override() {
+        let old = vec![];
+        let new = vec![make_field("field", "STRING", "NULLABLE")];
+        let diff = diff_schemas(&old, &new, &DiffOptions::default());
+
+        // Test with different color modes - all should produce valid output
+        for mode in [ColorMode::Auto, ColorMode::Always, ColorMode::Never] {
+            let mut output = Vec::new();
+            let result = write_diff(&diff, DiffFormat::Text, mode, &mut output);
+            assert!(result.is_ok());
+            assert!(!output.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_json_patch_empty_diff() {
+        let schema = vec![make_field("field", "STRING", "NULLABLE")];
+
+        let diff = diff_schemas(&schema, &schema, &DiffOptions::default());
+        let mut output = Vec::new();
+        write_diff(&diff, DiffFormat::JsonPatch, ColorMode::Never, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+
+        let patches: Vec<serde_json::Value> = serde_json::from_str(&output_str).unwrap();
+        assert!(patches.is_empty());
+    }
+
+    #[test]
+    fn test_sql_diff_no_changes() {
+        let schema = vec![make_field("field", "STRING", "NULLABLE")];
+
+        let diff = diff_schemas(&schema, &schema, &DiffOptions::default());
+        let mut output = Vec::new();
+        write_diff(&diff, DiffFormat::Sql, ColorMode::Never, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+
+        assert!(output_str.contains("No changes detected"));
+    }
+
+    #[test]
+    fn test_nested_record_diff_text() {
+        let old = vec![BqSchemaField {
+            name: "parent".to_string(),
+            field_type: "RECORD".to_string(),
+            mode: "NULLABLE".to_string(),
+            fields: Some(vec![make_field("child", "STRING", "NULLABLE")]),
+        }];
+        let new = vec![BqSchemaField {
+            name: "parent".to_string(),
+            field_type: "RECORD".to_string(),
+            mode: "NULLABLE".to_string(),
+            fields: Some(vec![
+                make_field("child", "STRING", "NULLABLE"),
+                make_field("new_child", "INTEGER", "NULLABLE"),
+            ]),
+        }];
+
+        let diff = diff_schemas(&old, &new, &DiffOptions::default());
+        let mut output = Vec::new();
+        write_diff(&diff, DiffFormat::Text, ColorMode::Never, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+
+        assert!(output_str.contains("parent.new_child") || output_str.contains("new_child"));
+    }
 }
