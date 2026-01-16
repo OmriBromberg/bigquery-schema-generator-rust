@@ -160,8 +160,5 @@ fn main() {
         "cargo:warning=Shell completions generated at: {}",
         completions_dir.display()
     );
-    println!(
-        "cargo:warning=Man page generated at: {}",
-        man_dir.display()
-    );
+    println!("cargo:warning=Man page generated at: {}", man_dir.display());
 }

@@ -183,7 +183,14 @@ pub fn run() {
             strict,
             output,
         }) => {
-            diff::run(&old_schema, &new_schema, &format, &color, strict, output.as_ref());
+            diff::run(
+                &old_schema,
+                &new_schema,
+                &format,
+                &color,
+                strict,
+                output.as_ref(),
+            );
         }
         Some(Commands::Validate {
             files,

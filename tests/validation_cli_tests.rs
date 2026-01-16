@@ -85,8 +85,11 @@ fn test_validate_missing_schema_exits_error() {
 fn test_validate_nonexistent_schema_file() {
     let data = create_data_file(r#"{"name": "test"}"#);
 
-    let (_, stderr, exit_code) =
-        run_validate(data.path().to_str().unwrap(), "/nonexistent/schema.json", &[]);
+    let (_, stderr, exit_code) = run_validate(
+        data.path().to_str().unwrap(),
+        "/nonexistent/schema.json",
+        &[],
+    );
 
     assert_ne!(exit_code, 0);
     assert!(
@@ -116,15 +119,20 @@ fn test_validate_valid_data_exits_zero() {
         &[],
     );
 
-    assert_eq!(exit_code, 0, "Valid data should exit with code 0. stderr: {}", stderr);
-    assert!(stderr.contains("passed") || stderr.contains("Validation"), "Should indicate success");
+    assert_eq!(
+        exit_code, 0,
+        "Valid data should exit with code 0. stderr: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains("passed") || stderr.contains("Validation"),
+        "Should indicate success"
+    );
 }
 
 #[test]
 fn test_validate_multiple_valid_records() {
-    let schema = create_schema_file(
-        r#"[{"name": "id", "type": "INTEGER", "mode": "NULLABLE"}]"#,
-    );
+    let schema = create_schema_file(r#"[{"name": "id", "type": "INTEGER", "mode": "NULLABLE"}]"#);
 
     let data = create_data_file(
         r#"{"id": 1}
@@ -148,9 +156,8 @@ fn test_validate_multiple_valid_records() {
 
 #[test]
 fn test_validate_invalid_data_exits_one() {
-    let schema = create_schema_file(
-        r#"[{"name": "value", "type": "INTEGER", "mode": "NULLABLE"}]"#,
-    );
+    let schema =
+        create_schema_file(r#"[{"name": "value", "type": "INTEGER", "mode": "NULLABLE"}]"#);
 
     let data = create_data_file(r#"{"value": "not an integer"}"#);
 
@@ -190,9 +197,8 @@ fn test_validate_missing_required_field() {
 
 #[test]
 fn test_validate_null_required_field() {
-    let schema = create_schema_file(
-        r#"[{"name": "required_field", "type": "STRING", "mode": "REQUIRED"}]"#,
-    );
+    let schema =
+        create_schema_file(r#"[{"name": "required_field", "type": "STRING", "mode": "REQUIRED"}]"#);
 
     let data = create_data_file(r#"{"required_field": null}"#);
 
@@ -212,9 +218,8 @@ fn test_validate_null_required_field() {
 
 #[test]
 fn test_validate_text_output_format() {
-    let schema = create_schema_file(
-        r#"[{"name": "value", "type": "INTEGER", "mode": "NULLABLE"}]"#,
-    );
+    let schema =
+        create_schema_file(r#"[{"name": "value", "type": "INTEGER", "mode": "NULLABLE"}]"#);
 
     let data = create_data_file(r#"{"value": "not_int"}"#);
 
@@ -231,9 +236,8 @@ fn test_validate_text_output_format() {
 
 #[test]
 fn test_validate_json_output_format() {
-    let schema = create_schema_file(
-        r#"[{"name": "value", "type": "INTEGER", "mode": "NULLABLE"}]"#,
-    );
+    let schema =
+        create_schema_file(r#"[{"name": "value", "type": "INTEGER", "mode": "NULLABLE"}]"#);
 
     let data = create_data_file(r#"{"value": "not_int"}"#);
 
@@ -246,8 +250,8 @@ fn test_validate_json_output_format() {
     assert_eq!(exit_code, 1);
 
     // JSON output should be valid JSON
-    let json: serde_json::Value = serde_json::from_str(&stdout)
-        .expect("JSON format should produce valid JSON");
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("JSON format should produce valid JSON");
 
     assert!(json.get("valid").is_some());
     assert!(json.get("error_count").is_some());
@@ -257,9 +261,7 @@ fn test_validate_json_output_format() {
 
 #[test]
 fn test_validate_json_output_structure() {
-    let schema = create_schema_file(
-        r#"[{"name": "id", "type": "INTEGER", "mode": "REQUIRED"}]"#,
-    );
+    let schema = create_schema_file(r#"[{"name": "id", "type": "INTEGER", "mode": "REQUIRED"}]"#);
 
     let data = create_data_file(r#"{"wrong_field": 42}"#);
 
@@ -290,9 +292,8 @@ fn test_validate_json_output_structure() {
 
 #[test]
 fn test_validate_quiet_mode_exit_code_only() {
-    let schema = create_schema_file(
-        r#"[{"name": "value", "type": "INTEGER", "mode": "NULLABLE"}]"#,
-    );
+    let schema =
+        create_schema_file(r#"[{"name": "value", "type": "INTEGER", "mode": "NULLABLE"}]"#);
 
     // Valid data
     let valid_data = create_data_file(r#"{"value": 42}"#);
@@ -323,9 +324,7 @@ fn test_validate_quiet_mode_exit_code_only() {
 
 #[test]
 fn test_validate_allow_unknown_flag() {
-    let schema = create_schema_file(
-        r#"[{"name": "known", "type": "STRING", "mode": "NULLABLE"}]"#,
-    );
+    let schema = create_schema_file(r#"[{"name": "known", "type": "STRING", "mode": "NULLABLE"}]"#);
 
     let data = create_data_file(r#"{"known": "test", "unknown": 123}"#);
 
@@ -344,15 +343,17 @@ fn test_validate_allow_unknown_flag() {
         schema.path().to_str().unwrap(),
         &["--allow-unknown"],
     );
-    assert_eq!(exit_code2, 0, "Unknown field should pass with --allow-unknown");
+    assert_eq!(
+        exit_code2, 0,
+        "Unknown field should pass with --allow-unknown"
+    );
     assert!(stderr2.contains("warning") || stderr2.contains("passed"));
 }
 
 #[test]
 fn test_validate_strict_types_flag() {
-    let schema = create_schema_file(
-        r#"[{"name": "value", "type": "INTEGER", "mode": "NULLABLE"}]"#,
-    );
+    let schema =
+        create_schema_file(r#"[{"name": "value", "type": "INTEGER", "mode": "NULLABLE"}]"#);
 
     let data = create_data_file(r#"{"value": "123"}"#);
 
@@ -362,7 +363,10 @@ fn test_validate_strict_types_flag() {
         schema.path().to_str().unwrap(),
         &[],
     );
-    assert_eq!(exit_code1, 0, "String '123' should be accepted for INTEGER in lenient mode");
+    assert_eq!(
+        exit_code1, 0,
+        "String '123' should be accepted for INTEGER in lenient mode"
+    );
 
     // With --strict-types: "123" should be rejected
     let (_, stderr2, exit_code2) = run_validate(
@@ -370,7 +374,10 @@ fn test_validate_strict_types_flag() {
         schema.path().to_str().unwrap(),
         &["--strict-types"],
     );
-    assert_eq!(exit_code2, 1, "String '123' should be rejected in strict mode");
+    assert_eq!(
+        exit_code2, 1,
+        "String '123' should be rejected in strict mode"
+    );
     assert!(stderr2.contains("INTEGER") || stderr2.contains("type"));
 }
 
@@ -387,9 +394,7 @@ fn test_validate_max_errors_limit() {
     );
 
     // Data with 5 type errors
-    let data = create_data_file(
-        r#"{"a": "x", "b": "y", "c": "z", "d": "w", "e": "v"}"#,
-    );
+    let data = create_data_file(r#"{"a": "x", "b": "y", "c": "z", "d": "w", "e": "v"}"#);
 
     // Limit to 2 errors
     let (stdout, _, exit_code) = run_validate(
@@ -447,7 +452,9 @@ fn test_validate_nested_record_errors() {
     // Error path should include full nested path
     let error_path = errors[0]["path"].as_str().unwrap();
     assert!(
-        error_path.contains("user") && error_path.contains("address") && error_path.contains("city"),
+        error_path.contains("user")
+            && error_path.contains("address")
+            && error_path.contains("city"),
         "Error path should show full nested path: {}",
         error_path
     );
@@ -484,9 +491,7 @@ fn test_validate_deeply_nested_5_levels() {
     );
 
     // Valid deeply nested data
-    let valid_data = create_data_file(
-        r#"{"l1": {"l2": {"l3": {"l4": {"l5": "value"}}}}}"#,
-    );
+    let valid_data = create_data_file(r#"{"l1": {"l2": {"l3": {"l4": {"l5": "value"}}}}}"#);
     let (_, _, exit_code1) = run_validate(
         valid_data.path().to_str().unwrap(),
         schema.path().to_str().unwrap(),
@@ -495,15 +500,16 @@ fn test_validate_deeply_nested_5_levels() {
     assert_eq!(exit_code1, 0, "Valid deeply nested data should pass");
 
     // Missing required field at depth 5
-    let invalid_data = create_data_file(
-        r#"{"l1": {"l2": {"l3": {"l4": {}}}}}"#,
-    );
+    let invalid_data = create_data_file(r#"{"l1": {"l2": {"l3": {"l4": {}}}}}"#);
     let (_, _, exit_code2) = run_validate(
         invalid_data.path().to_str().unwrap(),
         schema.path().to_str().unwrap(),
         &[],
     );
-    assert_eq!(exit_code2, 1, "Missing deeply nested required field should fail");
+    assert_eq!(
+        exit_code2, 1,
+        "Missing deeply nested required field should fail"
+    );
 }
 
 // =============================================================================
@@ -512,9 +518,7 @@ fn test_validate_deeply_nested_5_levels() {
 
 #[test]
 fn test_validate_repeated_field_validation() {
-    let schema = create_schema_file(
-        r#"[{"name": "tags", "type": "STRING", "mode": "REPEATED"}]"#,
-    );
+    let schema = create_schema_file(r#"[{"name": "tags", "type": "STRING", "mode": "REPEATED"}]"#);
 
     // Valid array
     let valid_data = create_data_file(r#"{"tags": ["a", "b", "c"]}"#);
@@ -538,9 +542,8 @@ fn test_validate_repeated_field_validation() {
 
 #[test]
 fn test_validate_repeated_with_nulls_in_array() {
-    let schema = create_schema_file(
-        r#"[{"name": "values", "type": "INTEGER", "mode": "REPEATED"}]"#,
-    );
+    let schema =
+        create_schema_file(r#"[{"name": "values", "type": "INTEGER", "mode": "REPEATED"}]"#);
 
     // Array with nulls - should be allowed
     let data = create_data_file(r#"{"values": [1, null, 2]}"#);
@@ -554,9 +557,8 @@ fn test_validate_repeated_with_nulls_in_array() {
 
 #[test]
 fn test_validate_repeated_with_wrong_element_type() {
-    let schema = create_schema_file(
-        r#"[{"name": "numbers", "type": "INTEGER", "mode": "REPEATED"}]"#,
-    );
+    let schema =
+        create_schema_file(r#"[{"name": "numbers", "type": "INTEGER", "mode": "REPEATED"}]"#);
 
     // Array with wrong type element
     let data = create_data_file(r#"{"numbers": [1, 2, "three"]}"#);
@@ -593,9 +595,7 @@ fn test_validate_multiple_files_glob() {
     let schema_path = dir.path().join("schema.json");
     let mut schema_file = File::create(&schema_path).unwrap();
     schema_file
-        .write_all(
-            r#"[{"name": "id", "type": "INTEGER", "mode": "NULLABLE"}]"#.as_bytes(),
-        )
+        .write_all(r#"[{"name": "id", "type": "INTEGER", "mode": "NULLABLE"}]"#.as_bytes())
         .unwrap();
 
     // Create multiple data files
@@ -615,8 +615,15 @@ fn test_validate_multiple_files_glob() {
         &[],
     );
 
-    assert_eq!(exit_code, 0, "All valid files should pass. stderr: {}", stderr);
-    assert!(stderr.contains("3") || stderr.contains("passed"), "Should process multiple files");
+    assert_eq!(
+        exit_code, 0,
+        "All valid files should pass. stderr: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains("3") || stderr.contains("passed"),
+        "Should process multiple files"
+    );
 }
 
 // =============================================================================
@@ -641,14 +648,16 @@ fn test_validate_empty_record() {
         &[],
     );
 
-    assert_eq!(exit_code, 0, "Empty record with only nullable fields should pass");
+    assert_eq!(
+        exit_code, 0,
+        "Empty record with only nullable fields should pass"
+    );
 }
 
 #[test]
 fn test_validate_case_insensitive_field_matching() {
-    let schema = create_schema_file(
-        r#"[{"name": "UserName", "type": "STRING", "mode": "NULLABLE"}]"#,
-    );
+    let schema =
+        create_schema_file(r#"[{"name": "UserName", "type": "STRING", "mode": "NULLABLE"}]"#);
 
     // Data with different casing
     let data = create_data_file(r#"{"username": "test"}"#);
@@ -665,9 +674,7 @@ fn test_validate_case_insensitive_field_matching() {
 
 #[test]
 fn test_validate_empty_string_for_required_field() {
-    let schema = create_schema_file(
-        r#"[{"name": "name", "type": "STRING", "mode": "REQUIRED"}]"#,
-    );
+    let schema = create_schema_file(r#"[{"name": "name", "type": "STRING", "mode": "REQUIRED"}]"#);
 
     // Empty string should count as present
     let data = create_data_file(r#"{"name": ""}"#);
@@ -683,9 +690,7 @@ fn test_validate_empty_string_for_required_field() {
 
 #[test]
 fn test_validate_timestamp_unix_epoch_numeric() {
-    let schema = create_schema_file(
-        r#"[{"name": "ts", "type": "TIMESTAMP", "mode": "NULLABLE"}]"#,
-    );
+    let schema = create_schema_file(r#"[{"name": "ts", "type": "TIMESTAMP", "mode": "NULLABLE"}]"#);
 
     // Numeric timestamp (Unix epoch)
     let data = create_data_file(r#"{"ts": 1609459200}"#);
@@ -697,7 +702,10 @@ fn test_validate_timestamp_unix_epoch_numeric() {
         &[],
     );
 
-    assert_eq!(exit_code, 0, "Numeric timestamp should be accepted in lenient mode");
+    assert_eq!(
+        exit_code, 0,
+        "Numeric timestamp should be accepted in lenient mode"
+    );
 
     // In strict mode, should reject
     let (_, _, exit_code2) = run_validate(
@@ -706,14 +714,16 @@ fn test_validate_timestamp_unix_epoch_numeric() {
         &["--strict-types"],
     );
 
-    assert_eq!(exit_code2, 1, "Numeric timestamp should be rejected in strict mode");
+    assert_eq!(
+        exit_code2, 1,
+        "Numeric timestamp should be rejected in strict mode"
+    );
 }
 
 #[test]
 fn test_validate_float_integer_boundary() {
-    let schema = create_schema_file(
-        r#"[{"name": "big_int", "type": "INTEGER", "mode": "NULLABLE"}]"#,
-    );
+    let schema =
+        create_schema_file(r#"[{"name": "big_int", "type": "INTEGER", "mode": "NULLABLE"}]"#);
 
     // Value within i64 range
     let valid_data = create_data_file(r#"{"big_int": 9223372036854775807}"#);

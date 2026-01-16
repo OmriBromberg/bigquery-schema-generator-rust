@@ -1,6 +1,5 @@
 //! CLI integration tests for BigQuery Schema Generator
 
-use std::fs::File;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -194,13 +193,13 @@ fn test_cli_underscore_flag_compatibility() {
     let input = r#"{"test": 1}"#;
 
     // Test that underscore versions work
-    let (stdout, _, success) = run_cli_json(input, &["--input_format", "json"]);
+    let (_stdout, _, success) = run_cli_json(input, &["--input_format", "json"]);
     assert!(success);
 
-    let (stdout2, _, success2) = run_cli_json(input, &["--keep_nulls"]);
+    let (_stdout2, _, success2) = run_cli_json(input, &["--keep_nulls"]);
     assert!(success2);
 
-    let (stdout3, _, success3) = run_cli_json(input, &["--quoted_values_are_strings"]);
+    let (_stdout3, _, success3) = run_cli_json(input, &["--quoted_values_are_strings"]);
     assert!(success3);
 }
 
@@ -472,12 +471,7 @@ fn test_cli_output_format_ddl() {
     let input = r#"{"name": "test", "count": 42, "active": true}"#;
     let (stdout, _, success) = run_cli_json(
         input,
-        &[
-            "--output-format",
-            "ddl",
-            "--table-name",
-            "myproject.users",
-        ],
+        &["--output-format", "ddl", "--table-name", "myproject.users"],
     );
 
     assert!(success);

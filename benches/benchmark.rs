@@ -214,11 +214,31 @@ fn bench_validation_throughput() {
 
     // Create a schema
     let schema = vec![
-        BqSchemaField::new("id".to_string(), "INTEGER".to_string(), "REQUIRED".to_string()),
-        BqSchemaField::new("name".to_string(), "STRING".to_string(), "NULLABLE".to_string()),
-        BqSchemaField::new("email".to_string(), "STRING".to_string(), "NULLABLE".to_string()),
-        BqSchemaField::new("age".to_string(), "INTEGER".to_string(), "NULLABLE".to_string()),
-        BqSchemaField::new("active".to_string(), "BOOLEAN".to_string(), "NULLABLE".to_string()),
+        BqSchemaField::new(
+            "id".to_string(),
+            "INTEGER".to_string(),
+            "REQUIRED".to_string(),
+        ),
+        BqSchemaField::new(
+            "name".to_string(),
+            "STRING".to_string(),
+            "NULLABLE".to_string(),
+        ),
+        BqSchemaField::new(
+            "email".to_string(),
+            "STRING".to_string(),
+            "NULLABLE".to_string(),
+        ),
+        BqSchemaField::new(
+            "age".to_string(),
+            "INTEGER".to_string(),
+            "NULLABLE".to_string(),
+        ),
+        BqSchemaField::new(
+            "active".to_string(),
+            "BOOLEAN".to_string(),
+            "NULLABLE".to_string(),
+        ),
     ];
 
     let options = ValidationOptions::default();
@@ -263,8 +283,16 @@ fn bench_validation_with_errors() {
     println!("{:-<60}", "");
 
     let schema = vec![
-        BqSchemaField::new("id".to_string(), "INTEGER".to_string(), "REQUIRED".to_string()),
-        BqSchemaField::new("value".to_string(), "INTEGER".to_string(), "NULLABLE".to_string()),
+        BqSchemaField::new(
+            "id".to_string(),
+            "INTEGER".to_string(),
+            "REQUIRED".to_string(),
+        ),
+        BqSchemaField::new(
+            "value".to_string(),
+            "INTEGER".to_string(),
+            "NULLABLE".to_string(),
+        ),
     ];
 
     let options = ValidationOptions {
@@ -343,7 +371,8 @@ fn bench_schema_merging() {
                 };
                 let mut temp = serde_json::Map::new();
                 temp.insert(entry.name.clone(), json_value);
-                let _ = final_generator.process_record(&serde_json::Value::Object(temp), &mut final_map);
+                let _ = final_generator
+                    .process_record(&serde_json::Value::Object(temp), &mut final_map);
             }
         }
 
@@ -380,8 +409,12 @@ fn bench_watch_state_creation() {
                 writeln!(
                     file,
                     r#"{{"id": {}, "value": {}, "name": "item_{}_{}"}}"#,
-                    i * 100 + j, j, i, j
-                ).unwrap();
+                    i * 100 + j,
+                    j,
+                    i,
+                    j
+                )
+                .unwrap();
             }
             file_paths.push(path);
         }
@@ -442,8 +475,14 @@ fn bench_watch_file_change_handling() {
             let path = &file_paths[0];
             let mut file = std::fs::File::create(path).unwrap();
             for j in 0..100 {
-                writeln!(file, r#"{{"id": {}, "value": {}, "new_field": {}}}"#,
-                    j, j + iter, iter).unwrap();
+                writeln!(
+                    file,
+                    r#"{{"id": {}, "value": {}, "new_field": {}}}"#,
+                    j,
+                    j + iter,
+                    iter
+                )
+                .unwrap();
             }
 
             let _ = state.handle_file_change(path);
@@ -453,9 +492,7 @@ fn bench_watch_file_change_handling() {
         let avg_ms = (elapsed.as_secs_f64() * 1000.0) / iterations as f64;
         println!(
             "  {:>4} files context, {} changes: {:>8.2}ms avg per change",
-            num_files,
-            iterations,
-            avg_ms
+            num_files, iterations, avg_ms
         );
     }
 }

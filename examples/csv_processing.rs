@@ -39,9 +39,6 @@ Charlie,35,charlie@example.com,4.9"#;
 
     println!("CSV Schema (with infer_mode):");
     for field in &schema {
-        println!(
-            "  {} {} ({})",
-            field.name, field.field_type, field.mode
-        );
+        println!("  {} {} ({})", field.name, field.field_type, field.mode);
     }
 }

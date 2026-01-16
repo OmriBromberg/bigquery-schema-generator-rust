@@ -38,8 +38,14 @@ fn create_test_files(dir: &std::path::Path, count: usize) -> Vec<String> {
     for i in 0..count {
         let path = dir.join(format!("data{}.json", i));
         let mut file = File::create(&path).expect("Failed to create file");
-        writeln!(file, r#"{{"id": {}, "name": "item_{}", "value": {}}}"#, i, i, i * 10)
-            .expect("Failed to write");
+        writeln!(
+            file,
+            r#"{{"id": {}, "name": "item_{}", "value": {}}}"#,
+            i,
+            i,
+            i * 10
+        )
+        .expect("Failed to write");
         paths.push(path.to_string_lossy().to_string());
     }
 
@@ -58,7 +64,10 @@ fn test_parallel_threads_flag_help() {
         .expect("Failed to run command");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("--threads"), "Help should mention --threads flag");
+    assert!(
+        stdout.contains("--threads"),
+        "Help should mention --threads flag"
+    );
 }
 
 #[test]
@@ -108,7 +117,11 @@ fn test_parallel_multi_thread_same_result() {
     let arr1 = schema1.as_array().unwrap();
     let arr4 = schema4.as_array().unwrap();
 
-    assert_eq!(arr1.len(), arr4.len(), "Parallel should produce same field count");
+    assert_eq!(
+        arr1.len(),
+        arr4.len(),
+        "Parallel should produce same field count"
+    );
 
     // Check that all fields are present with same types
     for field1 in arr1 {
@@ -147,8 +160,14 @@ fn test_parallel_result_consistency() {
     let schema3 = parse_schema(&stdout3);
 
     // All runs should produce identical results
-    assert_eq!(schema1, schema2, "Multiple parallel runs should be consistent");
-    assert_eq!(schema2, schema3, "Multiple parallel runs should be consistent");
+    assert_eq!(
+        schema1, schema2,
+        "Multiple parallel runs should be consistent"
+    );
+    assert_eq!(
+        schema2, schema3,
+        "Multiple parallel runs should be consistent"
+    );
 }
 
 // =============================================================================
@@ -228,7 +247,10 @@ fn test_parallel_type_widening_across_files() {
 
     // Should be widened to FLOAT
     let value_field = arr.iter().find(|f| f["name"] == "value").unwrap();
-    assert_eq!(value_field["type"], "FLOAT", "INTEGER + FLOAT should widen to FLOAT");
+    assert_eq!(
+        value_field["type"], "FLOAT",
+        "INTEGER + FLOAT should widen to FLOAT"
+    );
 }
 
 // =============================================================================
@@ -274,7 +296,10 @@ fn test_parallel_error_handling_continues() {
     if success {
         let schema = parse_schema(&stdout);
         let arr = schema.as_array().unwrap();
-        assert!(arr.iter().any(|f| f["name"] == "id"), "Should have processed valid files");
+        assert!(
+            arr.iter().any(|f| f["name"] == "id"),
+            "Should have processed valid files"
+        );
     }
 }
 
@@ -292,13 +317,7 @@ fn test_parallel_output_file_option() {
 
     let (_, _, success) = run_cli_with_files(
         &file_refs,
-        &[
-            "--threads",
-            "2",
-            "-o",
-            output_path.to_str().unwrap(),
-            "-q",
-        ],
+        &["--threads", "2", "-o", output_path.to_str().unwrap(), "-q"],
     );
 
     assert!(success);
@@ -322,7 +341,11 @@ fn test_parallel_large_file_set() {
 
     let (stdout, stderr, success) = run_cli_with_files(&file_refs, &["--threads", "4"]);
 
-    assert!(success, "Should process 100 files successfully. stderr: {}", stderr);
+    assert!(
+        success,
+        "Should process 100 files successfully. stderr: {}",
+        stderr
+    );
 
     let schema = parse_schema(&stdout);
     let arr = schema.as_array().unwrap();
@@ -381,10 +404,8 @@ fn test_parallel_glob_pattern() {
 
     let pattern = dir.path().join("data*.json");
 
-    let (stdout, _, success) = run_cli_with_files(
-        &[pattern.to_str().unwrap()],
-        &["--threads", "4", "-q"],
-    );
+    let (stdout, _, success) =
+        run_cli_with_files(&[pattern.to_str().unwrap()], &["--threads", "4", "-q"]);
 
     assert!(success, "Glob pattern should work with parallel processing");
 
@@ -405,16 +426,9 @@ fn test_parallel_various_thread_counts() {
 
     // Test with different thread counts
     for threads in &["1", "2", "4", "8"] {
-        let (stdout, _, success) = run_cli_with_files(
-            &file_refs,
-            &["--threads", threads, "-q"],
-        );
+        let (stdout, _, success) = run_cli_with_files(&file_refs, &["--threads", threads, "-q"]);
 
-        assert!(
-            success,
-            "Should succeed with {} threads",
-            threads
-        );
+        assert!(success, "Should succeed with {} threads", threads);
 
         let schema = parse_schema(&stdout);
         let arr = schema.as_array().unwrap();
@@ -443,7 +457,10 @@ fn test_parallel_progress_output() {
     assert!(success);
     // Progress indicator should mention thread count or files processed
     assert!(
-        stderr.contains("threads") || stderr.contains("files") || stderr.contains("records") || stderr.contains("Done"),
+        stderr.contains("threads")
+            || stderr.contains("files")
+            || stderr.contains("records")
+            || stderr.contains("Done"),
         "Should show progress information. stderr: {}",
         stderr
     );
@@ -459,7 +476,11 @@ fn test_parallel_quiet_mode() {
     let (stdout, stderr, success) = run_cli_with_files(&file_refs, &["--threads", "4", "-q"]);
 
     assert!(success);
-    assert!(stderr.is_empty(), "Quiet mode should suppress progress. Got: {}", stderr);
+    assert!(
+        stderr.is_empty(),
+        "Quiet mode should suppress progress. Got: {}",
+        stderr
+    );
     assert!(!stdout.is_empty(), "Should still output schema");
 }
 
@@ -473,10 +494,7 @@ fn test_parallel_single_file() {
     let files = create_test_files(dir.path(), 1);
 
     // Even with --threads, single file should work
-    let (stdout, _, success) = run_cli_with_files(
-        &[files[0].as_str()],
-        &["--threads", "4", "-q"],
-    );
+    let (stdout, _, success) = run_cli_with_files(&[files[0].as_str()], &["--threads", "4", "-q"]);
 
     assert!(success);
     let schema = parse_schema(&stdout);
@@ -495,10 +513,8 @@ fn test_parallel_empty_files() {
 
     let pattern = dir.path().join("empty*.json");
 
-    let (stdout, _, success) = run_cli_with_files(
-        &[pattern.to_str().unwrap()],
-        &["--threads", "2", "-q"],
-    );
+    let (stdout, _, success) =
+        run_cli_with_files(&[pattern.to_str().unwrap()], &["--threads", "2", "-q"]);
 
     assert!(success, "Should handle empty files");
     let schema = parse_schema(&stdout);

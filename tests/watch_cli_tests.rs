@@ -39,9 +39,18 @@ fn test_watch_flag_help() {
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     // Watch mode flags should be documented
-    assert!(stdout.contains("--watch"), "Help should mention --watch flag");
-    assert!(stdout.contains("--debounce"), "Help should mention --debounce flag");
-    assert!(stdout.contains("--on-change"), "Help should mention --on-change flag");
+    assert!(
+        stdout.contains("--watch"),
+        "Help should mention --watch flag"
+    );
+    assert!(
+        stdout.contains("--debounce"),
+        "Help should mention --debounce flag"
+    );
+    assert!(
+        stdout.contains("--on-change"),
+        "Help should mention --on-change flag"
+    );
 }
 
 // =============================================================================
@@ -70,15 +79,13 @@ fn test_watch_incompatible_with_per_file() {
         .write_all(r#"{"id": 1}"#.as_bytes())
         .unwrap();
 
-    let (_, stderr, success) = run_cli(&[
-        file_path.to_str().unwrap(),
-        "--watch",
-        "--per-file",
-    ]);
+    let (_, stderr, success) = run_cli(&[file_path.to_str().unwrap(), "--watch", "--per-file"]);
 
     assert!(!success, "Watch with --per-file should fail");
     assert!(
-        stderr.contains("cannot be used") || stderr.contains("incompatible") || stderr.contains("--per-file"),
+        stderr.contains("cannot be used")
+            || stderr.contains("incompatible")
+            || stderr.contains("--per-file"),
         "Should report incompatibility. stderr: {}",
         stderr
     );
@@ -99,12 +106,7 @@ fn test_watch_debounce_flag() {
 
     // Start watch mode (will be killed immediately, but should accept the flag)
     let mut child = Command::new("./target/debug/bq-schema-gen")
-        .args([
-            file_path.to_str().unwrap(),
-            "--watch",
-            "--debounce",
-            "500",
-        ])
+        .args([file_path.to_str().unwrap(), "--watch", "--debounce", "500"])
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
@@ -249,8 +251,8 @@ fn test_watch_with_output_file() {
 
     // Verify it's valid JSON schema
     let content = std::fs::read_to_string(&output_path).unwrap();
-    let schema: serde_json::Value = serde_json::from_str(&content)
-        .expect("Output should be valid JSON");
+    let schema: serde_json::Value =
+        serde_json::from_str(&content).expect("Output should be valid JSON");
     assert!(schema.is_array());
 }
 
@@ -298,10 +300,7 @@ fn test_watch_quiet_mode() {
 
 #[test]
 fn test_watch_nonexistent_files() {
-    let (_, stderr, success) = run_cli(&[
-        "/nonexistent/path/*.json",
-        "--watch",
-    ]);
+    let (_, stderr, success) = run_cli(&["/nonexistent/path/*.json", "--watch"]);
 
     assert!(!success, "Watch with no matching files should fail");
     assert!(
@@ -373,7 +372,8 @@ fn test_watch_with_ignore_invalid_lines() {
 
         // Should have processed the valid fields
         assert!(
-            arr.iter().any(|f| f["name"] == "valid" || f["name"] == "also_valid"),
+            arr.iter()
+                .any(|f| f["name"] == "valid" || f["name"] == "also_valid"),
             "Should process valid lines despite invalid ones"
         );
     }

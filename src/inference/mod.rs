@@ -17,19 +17,19 @@ pub const INTEGER_MIN_VALUE: i64 = i64::MIN; // -2^63 = -9223372036854775808
 // Regex patterns matching the Python implementation exactly
 
 /// Detect a TIMESTAMP field of the form:
-/// YYYY-[M]M-[D]D[( |T)[H]H:[M]M:[S]S[.DDDDDD]][time zone]
+/// `YYYY-[M]M-[D]D[( |T)[H]H:[M]M:[S]S[.DDDDDD]][time zone]`
 static TIMESTAMP_REGEX: Lazy<Regex> = Lazy::new(|| {
     Regex::new(
         r"^\d{4}-\d{1,2}-\d{1,2}[T ]\d{1,2}:\d{1,2}:\d{1,2}(\.\d{1,6})? *(([+-]\d{1,2}(:\d{1,2})?)|Z|UTC)?$"
     ).unwrap()
 });
 
-/// Detect a DATE field of the form YYYY-[M]M-[D]D.
+/// Detect a DATE field of the form `YYYY-[M]M-[D]D`.
 static DATE_REGEX: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^\d{4}-(?:[1-9]|0[1-9]|1[012])-(?:[1-9]|0[1-9]|[12][0-9]|3[01])$").unwrap()
 });
 
-/// Detect a TIME field of the form [H]H:[M]M:[S]S[.DDDDDD]
+/// Detect a TIME field of the form `[H]H:[M]M:[S]S[.DDDDDD]`
 static TIME_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^\d{1,2}:\d{1,2}:\d{1,2}(\.\d{1,6})?$").unwrap());
 
@@ -243,11 +243,11 @@ pub fn infer_array_type(
 ///
 /// Type conversion rules (matching Python implementation):
 /// - Same type -> same type
-/// - [Q]BOOLEAN + [Q]BOOLEAN -> BOOLEAN
-/// - [Q]INTEGER + [Q]INTEGER -> INTEGER
-/// - [Q]FLOAT + [Q]FLOAT -> FLOAT
+/// - `[Q]BOOLEAN + [Q]BOOLEAN` -> BOOLEAN
+/// - `[Q]INTEGER + [Q]INTEGER` -> INTEGER
+/// - `[Q]FLOAT + [Q]FLOAT` -> FLOAT
 /// - QINTEGER + QFLOAT -> QFLOAT
-/// - [Q]INTEGER + [Q]FLOAT -> FLOAT (except QINTEGER + QFLOAT)
+/// - `[Q]INTEGER + [Q]FLOAT` -> FLOAT (except QINTEGER + QFLOAT)
 /// - String-compatible types -> STRING
 /// - Otherwise -> None (incompatible)
 pub fn convert_type(atype: &BqType, btype: &BqType) -> Option<BqType> {
@@ -421,7 +421,7 @@ mod tests {
             Some(BqType::Integer)
         );
         assert_eq!(
-            infer_type_from_json(&json!(3.14), false),
+            infer_type_from_json(&json!(3.5), false),
             Some(BqType::Float)
         );
 

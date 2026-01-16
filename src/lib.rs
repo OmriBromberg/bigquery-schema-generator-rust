@@ -156,8 +156,10 @@ mod tests {
         let cursor = Cursor::new(input);
         let mut output = Vec::new();
 
-        let mut config = GeneratorConfig::default();
-        config.input_format = InputFormat::Csv;
+        let config = GeneratorConfig {
+            input_format: InputFormat::Csv,
+            ..Default::default()
+        };
 
         let errors = generate_schema_from_csv(cursor, &mut output, config, None, None).unwrap();
 

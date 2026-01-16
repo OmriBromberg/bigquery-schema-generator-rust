@@ -249,7 +249,7 @@ fn test_array_with_single_element() {
 
 #[test]
 fn test_array_with_nulls_only() {
-    let (schema, errors) = generate_schema(
+    let (schema, _errors) = generate_schema(
         &[json!({"nulls": [null, null, null]})],
         GeneratorConfig::default(),
     );
@@ -470,7 +470,7 @@ fn test_array_bool_and_string_incompatible() {
 
 #[test]
 fn test_array_int_and_bool_incompatible() {
-    let (schema, errors) =
+    let (_schema, errors) =
         generate_schema(&[json!({"mixed": [1, true]})], GeneratorConfig::default());
 
     assert!(!errors.is_empty());
@@ -608,7 +608,7 @@ fn test_existing_schema_type_merge() {
 
     // New data has FLOAT - should upgrade to FLOAT
     let (schema, _) = generate_schema_with_existing(
-        &[json!({"value": 3.14})],
+        &[json!({"value": 3.5})],
         existing_schema,
         GeneratorConfig::default(),
     );

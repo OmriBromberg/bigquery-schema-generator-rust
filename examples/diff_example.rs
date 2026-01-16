@@ -101,7 +101,10 @@ fn main() {
 
     // Check for breaking changes
     if diff.has_breaking_changes() {
-        println!("\nWARNING: This schema change contains {} breaking change(s)!", diff.summary.breaking);
+        println!(
+            "\nWARNING: This schema change contains {} breaking change(s)!",
+            diff.summary.breaking
+        );
         println!("Breaking changes:");
         for change in diff.breaking_changes() {
             println!("  - {}: {}", change.path, change.description);
@@ -112,5 +115,8 @@ fn main() {
     println!("\n=== Strict Mode Example ===\n");
     let strict_options = DiffOptions { strict: true };
     let strict_diff = diff_schemas(&old_schema, &new_schema, &strict_options);
-    println!("In strict mode, all {} changes are marked as breaking.", strict_diff.summary.breaking);
+    println!(
+        "In strict mode, all {} changes are marked as breaking.",
+        strict_diff.summary.breaking
+    );
 }

@@ -10,7 +10,7 @@ use std::fmt;
 /// BigQuery data types.
 ///
 /// These correspond to the Legacy SQL types used by BigQuery's schema system.
-/// See: https://cloud.google.com/bigquery/docs/schemas
+/// See: <https://cloud.google.com/bigquery/docs/schemas>
 #[derive(Debug, Clone, PartialEq)]
 pub enum BqType {
     // Standard BigQuery types

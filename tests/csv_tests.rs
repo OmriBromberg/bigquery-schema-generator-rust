@@ -29,8 +29,10 @@ fn has_field(schema: &[Value], name: &str, field_type: &str, mode: &str) -> bool
 #[test]
 fn test_simple_csv() {
     let csv = "name,surname,age\nJohn,Smith,23\nMichael,Johnson,27";
-    let mut config = GeneratorConfig::default();
-    config.input_format = InputFormat::Csv;
+    let config = GeneratorConfig {
+        input_format: InputFormat::Csv,
+        ..Default::default()
+    };
 
     let schema = generate_csv_schema(csv, config);
 
@@ -43,8 +45,10 @@ fn test_simple_csv() {
 #[test]
 fn test_csv_with_empty_values() {
     let csv = "name,surname,age\nJohn\nMichael,,\nMaria,Smith,30";
-    let mut config = GeneratorConfig::default();
-    config.input_format = InputFormat::Csv;
+    let config = GeneratorConfig {
+        input_format: InputFormat::Csv,
+        ..Default::default()
+    };
 
     let schema = generate_csv_schema(csv, config);
 
@@ -57,8 +61,10 @@ fn test_csv_with_empty_values() {
 fn test_csv_type_inference() {
     let csv = "str,int,float,bool,date,time,timestamp\n\
                hello,42,3.14,true,2024-01-15,10:30:00,2024-01-15T10:30:00Z";
-    let mut config = GeneratorConfig::default();
-    config.input_format = InputFormat::Csv;
+    let config = GeneratorConfig {
+        input_format: InputFormat::Csv,
+        ..Default::default()
+    };
 
     let schema = generate_csv_schema(csv, config);
 
@@ -116,8 +122,10 @@ fn test_csv_infer_mode_mixed() {
 #[test]
 fn test_csv_preserves_column_order() {
     let csv = "z_col,a_col,m_col\n1,2,3";
-    let mut config = GeneratorConfig::default();
-    config.input_format = InputFormat::Csv;
+    let config = GeneratorConfig {
+        input_format: InputFormat::Csv,
+        ..Default::default()
+    };
 
     let schema = generate_csv_schema(csv, config);
 
@@ -135,8 +143,10 @@ fn test_csv_preserves_column_order() {
 fn test_csv_with_quoted_values() {
     let csv =
         "name,description\ntest,\"This is a, quoted value\"\nfoo,\"Another \"\"quoted\"\" value\"";
-    let mut config = GeneratorConfig::default();
-    config.input_format = InputFormat::Csv;
+    let config = GeneratorConfig {
+        input_format: InputFormat::Csv,
+        ..Default::default()
+    };
 
     let schema = generate_csv_schema(csv, config);
 
@@ -147,8 +157,10 @@ fn test_csv_with_quoted_values() {
 #[test]
 fn test_csv_with_numeric_strings() {
     let csv = "id,count\n001,100\n002,200";
-    let mut config = GeneratorConfig::default();
-    config.input_format = InputFormat::Csv;
+    let config = GeneratorConfig {
+        input_format: InputFormat::Csv,
+        ..Default::default()
+    };
 
     let schema = generate_csv_schema(csv, config);
 
@@ -161,8 +173,10 @@ fn test_csv_with_numeric_strings() {
 fn test_csv_type_progression() {
     // First row has integer, second has float
     let csv = "value\n42\n3.14";
-    let mut config = GeneratorConfig::default();
-    config.input_format = InputFormat::Csv;
+    let config = GeneratorConfig {
+        input_format: InputFormat::Csv,
+        ..Default::default()
+    };
 
     let schema = generate_csv_schema(csv, config);
 
@@ -173,8 +187,10 @@ fn test_csv_type_progression() {
 #[test]
 fn test_csv_all_empty_column() {
     let csv = "a,b,c\n1,,x\n2,,y\n3,,z";
-    let mut config = GeneratorConfig::default();
-    config.input_format = InputFormat::Csv;
+    let config = GeneratorConfig {
+        input_format: InputFormat::Csv,
+        ..Default::default()
+    };
 
     let schema = generate_csv_schema(csv, config);
 
@@ -185,8 +201,10 @@ fn test_csv_all_empty_column() {
 #[test]
 fn test_csv_boolean_variations() {
     let csv = "b1,b2,b3,b4\ntrue,false,True,FALSE";
-    let mut config = GeneratorConfig::default();
-    config.input_format = InputFormat::Csv;
+    let config = GeneratorConfig {
+        input_format: InputFormat::Csv,
+        ..Default::default()
+    };
 
     let schema = generate_csv_schema(csv, config);
 
@@ -203,8 +221,10 @@ fn test_csv_many_rows() {
         csv.push_str(&format!("{},{}\n", i, i * 2));
     }
 
-    let mut config = GeneratorConfig::default();
-    config.input_format = InputFormat::Csv;
+    let config = GeneratorConfig {
+        input_format: InputFormat::Csv,
+        ..Default::default()
+    };
 
     let schema = generate_csv_schema(&csv, config);
 
@@ -238,8 +258,10 @@ fn test_csv_complex_type_inference() {
                Maria,\"\",,false,2019-02-26 13:22:00 UTC,\n\
                Joanna,Anders,21,\"False\",2019-02-26 13:23:00,4";
 
-    let mut config = GeneratorConfig::default();
-    config.input_format = InputFormat::Csv;
+    let config = GeneratorConfig {
+        input_format: InputFormat::Csv,
+        ..Default::default()
+    };
 
     let schema = generate_csv_schema(csv, config);
 

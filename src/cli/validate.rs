@@ -5,7 +5,9 @@ use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
 use bq_schema_gen::validate::{SchemaValidator, ValidationResult};
-use bq_schema_gen::{BqSchemaField, JsonRecordIterator, ValidationError, ValidationErrorType, ValidationOptions};
+use bq_schema_gen::{
+    BqSchemaField, JsonRecordIterator, ValidationError, ValidationErrorType, ValidationOptions,
+};
 
 /// Run the validate subcommand
 pub fn run(
@@ -184,7 +186,11 @@ fn load_schema_file(path: &Path) -> Vec<BqSchemaField> {
 
     let reader = BufReader::new(file);
     serde_json::from_reader(reader).unwrap_or_else(|e| {
-        eprintln!("Error: Cannot parse schema file '{}': {}", path.display(), e);
+        eprintln!(
+            "Error: Cannot parse schema file '{}': {}",
+            path.display(),
+            e
+        );
         std::process::exit(1);
     })
 }

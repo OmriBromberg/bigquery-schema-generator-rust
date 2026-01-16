@@ -655,7 +655,7 @@ mod tests {
         generator.process_record(&record1, &mut schema_map).unwrap();
 
         // Second record has float
-        let record2 = json!({"value": 3.14});
+        let record2 = json!({"value": 3.5});
         generator.process_record(&record2, &mut schema_map).unwrap();
 
         let schema = generator.flatten_schema(&schema_map);

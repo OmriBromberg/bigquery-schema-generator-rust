@@ -240,10 +240,8 @@ pub fn run_watch(
 
     // Set up debounced file watcher
     let (tx, rx) = channel();
-    let mut debouncer = new_debouncer(
-        Duration::from_millis(watch_config.debounce_ms),
-        tx,
-    ).map_err(|e| crate::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+    let mut debouncer = new_debouncer(Duration::from_millis(watch_config.debounce_ms), tx)
+        .map_err(|e| crate::Error::Io(std::io::Error::other(e.to_string())))?;
 
     // Get unique directories to watch
     let watch_dirs = get_unique_dirs(&files);
@@ -253,7 +251,7 @@ pub fn run_watch(
         debouncer
             .watcher()
             .watch(dir, RecursiveMode::NonRecursive)
-            .map_err(|e| crate::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+            .map_err(|e| crate::Error::Io(std::io::Error::other(e.to_string())))?;
     }
 
     // Create a set of file paths we're interested in
@@ -290,10 +288,16 @@ pub fn run_watch(
 
                                 // Write output
                                 if let Some(out_path) = output_path {
-                                    if let Err(e) = write_schema_to_file(out_path, state.current_schema()) {
+                                    if let Err(e) =
+                                        write_schema_to_file(out_path, state.current_schema())
+                                    {
                                         eprintln!("Error writing schema: {}", e);
                                     } else if !watch_config.quiet {
-                                        println!("[{}] Wrote {}", format_time(), out_path.display());
+                                        println!(
+                                            "[{}] Wrote {}",
+                                            format_time(),
+                                            out_path.display()
+                                        );
                                     }
                                 }
 
@@ -324,10 +328,16 @@ pub fn run_watch(
                                 }
 
                                 if let Some(out_path) = output_path {
-                                    if let Err(e) = write_schema_to_file(out_path, state.current_schema()) {
+                                    if let Err(e) =
+                                        write_schema_to_file(out_path, state.current_schema())
+                                    {
                                         eprintln!("Error writing schema: {}", e);
                                     } else if !watch_config.quiet {
-                                        println!("[{}] Wrote {}", format_time(), out_path.display());
+                                        println!(
+                                            "[{}] Wrote {}",
+                                            format_time(),
+                                            out_path.display()
+                                        );
                                     }
                                 }
 
@@ -764,7 +774,11 @@ mod tests {
             "id".to_string(),
             SchemaEntry::new("id".to_string(), BqType::Integer, BqMode::Nullable),
         );
-        let entry = SchemaEntry::new("items".to_string(), BqType::Record(nested), BqMode::Repeated);
+        let entry = SchemaEntry::new(
+            "items".to_string(),
+            BqType::Record(nested),
+            BqMode::Repeated,
+        );
         let json = entry_to_json(&entry);
         assert!(json.is_array());
     }
@@ -833,7 +847,11 @@ mod tests {
         let mut state = WatchState::new(&files, config, watch_config).unwrap();
 
         // Initial type should be INTEGER
-        let field = state.current_schema().iter().find(|f| f.name == "value").unwrap();
+        let field = state
+            .current_schema()
+            .iter()
+            .find(|f| f.name == "value")
+            .unwrap();
         assert_eq!(field.field_type, "INTEGER");
 
         // Update file to have float
@@ -843,7 +861,11 @@ mod tests {
         state.handle_file_change(&file_path);
 
         // Type should be widened to FLOAT
-        let field = state.current_schema().iter().find(|f| f.name == "value").unwrap();
+        let field = state
+            .current_schema()
+            .iter()
+            .find(|f| f.name == "value")
+            .unwrap();
         assert_eq!(field.field_type, "FLOAT");
     }
 }

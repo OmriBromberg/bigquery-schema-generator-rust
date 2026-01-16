@@ -49,10 +49,7 @@ pub struct SchemaValidator<'a> {
 impl<'a> SchemaValidator<'a> {
     /// Create a new validator with the given schema and options.
     pub fn new(schema: &'a [BqSchemaField], options: ValidationOptions) -> Self {
-        let schema_map = schema
-            .iter()
-            .map(|f| (f.name.to_lowercase(), f))
-            .collect();
+        let schema_map = schema.iter().map(|f| (f.name.to_lowercase(), f)).collect();
 
         Self {
             schema,
@@ -234,7 +231,14 @@ impl<'a> SchemaValidator<'a> {
                                 .iter()
                                 .map(|f| (f.name.to_lowercase(), f))
                                 .collect();
-                            self.validate_object(obj, line, path, nested_fields, &nested_map, result);
+                            self.validate_object(
+                                obj,
+                                line,
+                                path,
+                                nested_fields,
+                                &nested_map,
+                                result,
+                            );
                         }
                     }
                     _ => {
@@ -802,7 +806,7 @@ mod tests {
 
         // Float should not be valid for INTEGER
         let mut result2 = ValidationResult::new();
-        let record2 = json!({"big_num": 3.14});
+        let record2 = json!({"big_num": 3.5});
         validator.validate_record(&record2, 1, &mut result2);
         assert!(!result2.valid);
     }
@@ -816,7 +820,10 @@ mod tests {
         let mut result1 = ValidationResult::new();
         let record = json!({"ts": 1609459200});
         lenient_validator.validate_record(&record, 1, &mut result1);
-        assert!(result1.valid, "Numeric timestamp should be valid in lenient mode");
+        assert!(
+            result1.valid,
+            "Numeric timestamp should be valid in lenient mode"
+        );
 
         // Strict mode - only string timestamps
         let strict_options = ValidationOptions {
@@ -826,7 +833,10 @@ mod tests {
         let strict_validator = SchemaValidator::new(&schema, strict_options);
         let mut result2 = ValidationResult::new();
         strict_validator.validate_record(&record, 1, &mut result2);
-        assert!(!result2.valid, "Numeric timestamp should be invalid in strict mode");
+        assert!(
+            !result2.valid,
+            "Numeric timestamp should be invalid in strict mode"
+        );
     }
 
     #[test]
@@ -911,7 +921,10 @@ mod tests {
         validator.validate_record(&record, 1, &mut result);
 
         assert!(!result.valid);
-        assert_eq!(result.error_count, 3, "Should report all missing required fields");
+        assert_eq!(
+            result.error_count, 3,
+            "Should report all missing required fields"
+        );
     }
 
     #[test]

@@ -256,10 +256,7 @@ pub fn write_schema_debug_map<W: Write>(schema_map: &SchemaMap, writer: &mut W) 
 // =============================================================================
 
 /// Write the schema as JSON Schema draft-07 format.
-pub fn write_schema_json_schema<W: Write>(
-    schema: &[BqSchemaField],
-    writer: &mut W,
-) -> Result<()> {
+pub fn write_schema_json_schema<W: Write>(schema: &[BqSchemaField], writer: &mut W) -> Result<()> {
     let json_schema = bq_schema_to_json_schema(schema);
     let json = serde_json::to_string_pretty(&json_schema)
         .map_err(|e| crate::error::Error::SchemaFile(e.to_string()))?;
@@ -410,8 +407,16 @@ mod tests {
     #[test]
     fn test_write_schema_ddl_simple() {
         let schema = vec![
-            BqSchemaField::new("name".to_string(), "STRING".to_string(), "NULLABLE".to_string()),
-            BqSchemaField::new("age".to_string(), "INTEGER".to_string(), "REQUIRED".to_string()),
+            BqSchemaField::new(
+                "name".to_string(),
+                "STRING".to_string(),
+                "NULLABLE".to_string(),
+            ),
+            BqSchemaField::new(
+                "age".to_string(),
+                "INTEGER".to_string(),
+                "REQUIRED".to_string(),
+            ),
         ];
 
         let mut output = Vec::new();
@@ -444,8 +449,16 @@ mod tests {
             "user".to_string(),
             "NULLABLE".to_string(),
             vec![
-                BqSchemaField::new("email".to_string(), "STRING".to_string(), "NULLABLE".to_string()),
-                BqSchemaField::new("age".to_string(), "INTEGER".to_string(), "NULLABLE".to_string()),
+                BqSchemaField::new(
+                    "email".to_string(),
+                    "STRING".to_string(),
+                    "NULLABLE".to_string(),
+                ),
+                BqSchemaField::new(
+                    "age".to_string(),
+                    "INTEGER".to_string(),
+                    "NULLABLE".to_string(),
+                ),
             ],
         )];
 
@@ -461,8 +474,16 @@ mod tests {
     #[test]
     fn test_write_schema_json_schema() {
         let schema = vec![
-            BqSchemaField::new("name".to_string(), "STRING".to_string(), "NULLABLE".to_string()),
-            BqSchemaField::new("count".to_string(), "INTEGER".to_string(), "REQUIRED".to_string()),
+            BqSchemaField::new(
+                "name".to_string(),
+                "STRING".to_string(),
+                "NULLABLE".to_string(),
+            ),
+            BqSchemaField::new(
+                "count".to_string(),
+                "INTEGER".to_string(),
+                "REQUIRED".to_string(),
+            ),
         ];
 
         let mut output = Vec::new();

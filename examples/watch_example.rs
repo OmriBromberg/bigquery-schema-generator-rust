@@ -43,7 +43,10 @@ fn main() {
     println!("  Debounce: {} ms", default_config.debounce_ms);
     println!("  On change: {:?}", default_config.on_change);
     println!("  Quiet: {}", default_config.quiet);
-    println!("  Ignore invalid lines: {}", default_config.ignore_invalid_lines);
+    println!(
+        "  Ignore invalid lines: {}",
+        default_config.ignore_invalid_lines
+    );
     println!();
 
     // Example 4: GeneratorConfig for watch mode

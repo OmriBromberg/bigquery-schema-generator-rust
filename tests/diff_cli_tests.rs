@@ -6,11 +6,7 @@ use std::process::{Command, Stdio};
 use tempfile::TempDir;
 
 /// Helper to run the diff CLI command
-fn run_diff(
-    old_schema: &str,
-    new_schema: &str,
-    args: &[&str],
-) -> (String, String, bool, i32) {
+fn run_diff(old_schema: &str, new_schema: &str, args: &[&str]) -> (String, String, bool, i32) {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
 
     let old_path = temp_dir.path().join("old_schema.json");
@@ -256,8 +252,8 @@ fn test_diff_json_format() {
     assert!(success);
 
     // Should be valid JSON
-    let json: serde_json::Value = serde_json::from_str(&stdout)
-        .expect("Output should be valid JSON");
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("Output should be valid JSON");
 
     assert!(json.get("summary").is_some());
     assert!(json.get("changes").is_some());
@@ -279,8 +275,8 @@ fn test_diff_json_patch_format() {
     assert!(success);
 
     // Should be valid JSON array (RFC 6902)
-    let patches: Vec<serde_json::Value> = serde_json::from_str(&stdout)
-        .expect("Output should be valid JSON array");
+    let patches: Vec<serde_json::Value> =
+        serde_json::from_str(&stdout).expect("Output should be valid JSON array");
 
     assert_eq!(patches.len(), 1);
     assert_eq!(patches[0].get("op").unwrap(), "add");
@@ -565,10 +561,7 @@ fn test_diff_invalid_old_schema_file() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let new_path = temp_dir.path().join("new_schema.json");
 
-    File::create(&new_path)
-        .unwrap()
-        .write_all(b"[]")
-        .unwrap();
+    File::create(&new_path).unwrap().write_all(b"[]").unwrap();
 
     let output = Command::new("./target/debug/bq-schema-gen")
         .args([
@@ -595,10 +588,7 @@ fn test_diff_invalid_json_in_schema() {
         .unwrap()
         .write_all(b"not valid json")
         .unwrap();
-    File::create(&new_path)
-        .unwrap()
-        .write_all(b"[]")
-        .unwrap();
+    File::create(&new_path).unwrap().write_all(b"[]").unwrap();
 
     let output = Command::new("./target/debug/bq-schema-gen")
         .args([
@@ -626,10 +616,7 @@ fn test_diff_output_file() {
     let new_path = temp_dir.path().join("new_schema.json");
     let output_path = temp_dir.path().join("diff_output.txt");
 
-    File::create(&old_path)
-        .unwrap()
-        .write_all(b"[]")
-        .unwrap();
+    File::create(&old_path).unwrap().write_all(b"[]").unwrap();
     File::create(&new_path)
         .unwrap()
         .write_all(br#"[{"name": "id", "type": "INTEGER", "mode": "REQUIRED"}]"#)
@@ -697,8 +684,8 @@ fn test_diff_json_format_multiple_changes() {
 
     let (stdout, _, _, _) = run_diff(old, new, &["--format", "json"]);
 
-    let json: serde_json::Value = serde_json::from_str(&stdout)
-        .expect("Output should be valid JSON");
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("Output should be valid JSON");
 
     let changes = json.get("changes").unwrap().as_array().unwrap();
     assert!(changes.len() >= 2); // At least removed and added

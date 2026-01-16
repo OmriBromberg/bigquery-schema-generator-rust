@@ -10,10 +10,7 @@ pub enum ValidationErrorType {
     /// A required field is missing or null
     MissingRequired,
     /// Value type doesn't match expected schema type
-    TypeMismatch {
-        expected: String,
-        actual: String,
-    },
+    TypeMismatch { expected: String, actual: String },
     /// Field exists in data but not in schema
     UnknownField,
 }
@@ -55,7 +52,13 @@ impl ValidationError {
     }
 
     /// Create a new validation error for a type mismatch.
-    pub fn type_mismatch(line: usize, path: &str, expected: &str, actual: &str, value: &str) -> Self {
+    pub fn type_mismatch(
+        line: usize,
+        path: &str,
+        expected: &str,
+        actual: &str,
+        value: &str,
+    ) -> Self {
         Self {
             line,
             path: path.to_string(),

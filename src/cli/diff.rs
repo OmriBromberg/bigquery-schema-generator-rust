@@ -45,7 +45,11 @@ pub fn run(
     let mut output: Box<dyn io::Write> = match output_path {
         Some(path) => {
             let file = File::create(path).unwrap_or_else(|e| {
-                eprintln!("Error: Cannot create output file '{}': {}", path.display(), e);
+                eprintln!(
+                    "Error: Cannot create output file '{}': {}",
+                    path.display(),
+                    e
+                );
                 std::process::exit(1);
             });
             Box::new(file)
@@ -74,7 +78,11 @@ fn load_schema_file(path: &Path) -> Vec<BqSchemaField> {
 
     let reader = BufReader::new(file);
     serde_json::from_reader(reader).unwrap_or_else(|e| {
-        eprintln!("Error: Cannot parse schema file '{}': {}", path.display(), e);
+        eprintln!(
+            "Error: Cannot parse schema file '{}': {}",
+            path.display(),
+            e
+        );
         std::process::exit(1);
     })
 }

@@ -3,9 +3,8 @@
 //! These tests verify the schema generation against various input scenarios,
 //! matching the behavior of the Python bigquery-schema-generator.
 
-use bq_schema_gen::{GeneratorConfig, InputFormat, SchemaGenerator, SchemaMap};
-use serde_json::{json, Value};
-use std::io::Cursor;
+use bq_schema_gen::{GeneratorConfig, SchemaGenerator, SchemaMap};
+use serde_json::Value;
 
 /// Helper to generate schema from JSON strings
 fn generate_schema(records: &[&str], config: GeneratorConfig) -> (Vec<Value>, Vec<String>) {

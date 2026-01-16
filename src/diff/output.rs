@@ -185,9 +185,8 @@ fn write_text_diff<W: Write>(diff: &SchemaDiff, writer: &mut W) -> std::io::Resu
 
 /// Write JSON format diff
 fn write_json_diff<W: Write>(diff: &SchemaDiff, writer: &mut W) -> std::io::Result<()> {
-    let json = serde_json::to_string_pretty(diff).map_err(|e| {
-        std::io::Error::new(std::io::ErrorKind::Other, e)
-    })?;
+    let json =
+        serde_json::to_string_pretty(diff).map_err(|e| std::io::Error::other(e.to_string()))?;
     writeln!(writer, "{}", json)
 }
 
@@ -234,9 +233,8 @@ fn write_json_patch_diff<W: Write>(diff: &SchemaDiff, writer: &mut W) -> std::io
         }
     }
 
-    let json = serde_json::to_string_pretty(&patches).map_err(|e| {
-        std::io::Error::new(std::io::ErrorKind::Other, e)
-    })?;
+    let json =
+        serde_json::to_string_pretty(&patches).map_err(|e| std::io::Error::other(e.to_string()))?;
     writeln!(writer, "{}", json)
 }
 
@@ -252,7 +250,11 @@ fn write_sql_diff<W: Write>(diff: &SchemaDiff, writer: &mut W) -> std::io::Resul
     }
 
     if diff.has_breaking_changes() {
-        writeln!(writer, "-- WARNING: {} breaking change(s) detected!", diff.summary.breaking)?;
+        writeln!(
+            writer,
+            "-- WARNING: {} breaking change(s) detected!",
+            diff.summary.breaking
+        )?;
         writeln!(writer)?;
     }
 
@@ -266,14 +268,22 @@ fn write_sql_diff<W: Write>(diff: &SchemaDiff, writer: &mut W) -> std::io::Resul
                         "-- ALTER TABLE <table> ADD COLUMN {} {} {};",
                         new_field.name,
                         new_field.field_type,
-                        if new_field.mode == "REQUIRED" { "NOT NULL" } else { "" }
+                        if new_field.mode == "REQUIRED" {
+                            "NOT NULL"
+                        } else {
+                            ""
+                        }
                     )?;
                     writeln!(writer)?;
                 }
             }
             ChangeType::Removed => {
                 writeln!(writer, "-- DROP COLUMN: {} [BREAKING]", change.path)?;
-                writeln!(writer, "-- ALTER TABLE <table> DROP COLUMN {};", change.path)?;
+                writeln!(
+                    writer,
+                    "-- ALTER TABLE <table> DROP COLUMN {};",
+                    change.path
+                )?;
                 writeln!(writer, "-- Note: Ensure no queries depend on this column")?;
                 writeln!(writer)?;
             }
@@ -308,7 +318,7 @@ fn write_sql_diff<W: Write>(diff: &SchemaDiff, writer: &mut W) -> std::io::Resul
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::diff::{DiffOptions, diff_schemas};
+    use crate::diff::{diff_schemas, DiffOptions};
     use crate::schema::types::BqSchemaField;
 
     fn make_field(name: &str, field_type: &str, mode: &str) -> BqSchemaField {
@@ -356,7 +366,10 @@ mod tests {
     fn test_diff_format_from_str() {
         assert_eq!("text".parse::<DiffFormat>().unwrap(), DiffFormat::Text);
         assert_eq!("json".parse::<DiffFormat>().unwrap(), DiffFormat::Json);
-        assert_eq!("json-patch".parse::<DiffFormat>().unwrap(), DiffFormat::JsonPatch);
+        assert_eq!(
+            "json-patch".parse::<DiffFormat>().unwrap(),
+            DiffFormat::JsonPatch
+        );
         assert_eq!("sql".parse::<DiffFormat>().unwrap(), DiffFormat::Sql);
         assert!("invalid".parse::<DiffFormat>().is_err());
     }

@@ -106,9 +106,18 @@ pub fn diff_schemas(
     diff_fields(old_schema, new_schema, "", &mut changes, options);
 
     let summary = DiffSummary {
-        added: changes.iter().filter(|c| c.change_type == ChangeType::Added).count(),
-        removed: changes.iter().filter(|c| c.change_type == ChangeType::Removed).count(),
-        modified: changes.iter().filter(|c| c.change_type == ChangeType::Modified).count(),
+        added: changes
+            .iter()
+            .filter(|c| c.change_type == ChangeType::Added)
+            .count(),
+        removed: changes
+            .iter()
+            .filter(|c| c.change_type == ChangeType::Removed)
+            .count(),
+        modified: changes
+            .iter()
+            .filter(|c| c.change_type == ChangeType::Modified)
+            .count(),
         breaking: changes.iter().filter(|c| c.breaking).count(),
     };
 
@@ -149,9 +158,7 @@ fn diff_fields(
                 breaking: true, // Field removal is always breaking
                 description: format!(
                     "Field removed: {} ({}, {})",
-                    old_field.name,
-                    old_field.field_type,
-                    old_field.mode
+                    old_field.name, old_field.field_type, old_field.mode
                 ),
                 old_field: Some(old_field.into()),
                 new_field: None,
@@ -177,9 +184,7 @@ fn diff_fields(
                     breaking: options.strict, // Not breaking unless strict mode
                     description: format!(
                         "Field added: {} ({}, {})",
-                        new_field.name,
-                        new_field.field_type,
-                        new_field.mode
+                        new_field.name, new_field.field_type, new_field.mode
                     ),
                     old_field: None,
                     new_field: Some(new_field.into()),
@@ -203,15 +208,15 @@ fn compare_fields(
 ) {
     // Check type change
     if old_field.field_type != new_field.field_type {
-        let breaking = is_type_change_breaking(&old_field.field_type, &new_field.field_type, options);
+        let breaking =
+            is_type_change_breaking(&old_field.field_type, &new_field.field_type, options);
         changes.push(SchemaChange {
             path: path.to_string(),
             change_type: ChangeType::Modified,
             breaking,
             description: format!(
                 "Type changed: {} -> {}",
-                old_field.field_type,
-                new_field.field_type
+                old_field.field_type, new_field.field_type
             ),
             old_field: Some(old_field.into()),
             new_field: Some(new_field.into()),
@@ -225,11 +230,7 @@ fn compare_fields(
             path: path.to_string(),
             change_type: ChangeType::Modified,
             breaking,
-            description: format!(
-                "Mode changed: {} -> {}",
-                old_field.mode,
-                new_field.mode
-            ),
+            description: format!("Mode changed: {} -> {}", old_field.mode, new_field.mode),
             old_field: Some(old_field.into()),
             new_field: Some(new_field.into()),
         });
@@ -274,11 +275,11 @@ fn is_mode_change_breaking(old_mode: &str, new_mode: &str, options: &DiffOptions
 
     matches!(
         (old_mode, new_mode),
-        ("NULLABLE", "REQUIRED") |
-        ("REPEATED", "NULLABLE") |
-        ("REPEATED", "REQUIRED") |
-        ("NULLABLE", "REPEATED") |
-        ("REQUIRED", "REPEATED")
+        ("NULLABLE", "REQUIRED")
+            | ("REPEATED", "NULLABLE")
+            | ("REPEATED", "REQUIRED")
+            | ("NULLABLE", "REPEATED")
+            | ("REQUIRED", "REPEATED")
     )
 }
 

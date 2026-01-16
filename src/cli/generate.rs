@@ -240,7 +240,14 @@ fn process_merged_files(
     let use_parallel = num_threads > 1 && input_files.len() > 1;
 
     if use_parallel {
-        process_files_parallel(input_files, config, output_format, cli, existing_schema, num_threads);
+        process_files_parallel(
+            input_files,
+            config,
+            output_format,
+            cli,
+            existing_schema,
+            num_threads,
+        );
     } else {
         process_files_sequential(input_files, config, output_format, cli, existing_schema);
     }
@@ -648,7 +655,9 @@ fn process_input<R: Read>(
                 quiet,
             )
         }
-        InputFormat::Csv => process_csv_input(input, generator, schema_map, debugging_interval, quiet),
+        InputFormat::Csv => {
+            process_csv_input(input, generator, schema_map, debugging_interval, quiet)
+        }
     };
 
     if let Err(e) = result {
