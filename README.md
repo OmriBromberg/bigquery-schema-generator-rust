@@ -41,9 +41,22 @@ brew tap omribromberg/bigquery-schema-generator-rust
 brew install bq-schema-gen
 ```
 
-### From Binary
+### From GitHub Releases
 
-Download pre-built binaries from [GitHub Releases](https://github.com/omribromberg/bigquery-schema-generator-rust/releases).
+Download pre-built packages from [GitHub Releases](https://github.com/omribromberg/bigquery-schema-generator-rust/releases).
+
+Each release includes:
+- Pre-compiled binary
+- Shell completions (bash, zsh, fish, PowerShell)
+- Man pages
+
+```bash
+# Example: Extract and install on macOS/Linux
+tar -xzf bq-schema-gen-v0.1.0-x86_64-apple-darwin.tar.gz
+sudo mv bq-schema-gen /usr/local/bin/
+# Optionally install completions (e.g., for zsh)
+sudo mv completions/_bq-schema-gen /usr/local/share/zsh/site-functions/
+```
 
 ### From Source
 
@@ -228,7 +241,7 @@ Types evolve as more data is processed:
 
 ## Shell Completions
 
-Shell completions for bash, zsh, fish, and PowerShell are generated during build. If installed via Homebrew, completions are automatically installed.
+Shell completions for bash, zsh, fish, and PowerShell are included in [GitHub releases](https://github.com/omribromberg/bigquery-schema-generator-rust/releases) and automatically installed via Homebrew.
 
 ## Library Usage
 
