@@ -37,7 +37,7 @@ cargo install bq-schema-gen
 ### Using Homebrew
 
 ```bash
-brew tap omribromberg/bigquery-schema-generator-rust
+brew tap omribromberg/bigquery-schema-generator-rust https://github.com/omribromberg/bigquery-schema-generator-rust
 brew install bq-schema-gen
 ```
 

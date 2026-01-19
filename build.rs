@@ -10,86 +10,12 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-use clap::{CommandFactory, Parser, ValueEnum};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::{generate_to, Shell};
 
-// We need to define the Args struct here since build.rs can't import from the main crate
-#[derive(Parser, Debug)]
-#[command(
-    name = "bq-schema-gen",
-    about = "Generate BigQuery schema from JSON or CSV file",
-    version,
-    author
-)]
-struct Args {
-    /// Input files (supports glob patterns). Reads from stdin if not provided.
-    #[arg(value_name = "FILE")]
-    files: Vec<String>,
-
-    /// Input format: 'json' or 'csv'
-    #[arg(long, alias = "input_format", default_value = "json")]
-    input_format: String,
-
-    /// Output format: 'json' (default), 'ddl', 'debug-map', or 'json-schema'
-    #[arg(long, alias = "output_format", default_value = "json")]
-    output_format: String,
-
-    /// Table name for DDL output (e.g., 'dataset.table_name')
-    #[arg(long, alias = "table_name", default_value = "dataset.table_name")]
-    table_name: String,
-
-    /// Print the schema for null values, empty arrays or empty records
-    #[arg(long, alias = "keep_nulls")]
-    keep_nulls: bool,
-
-    /// Quoted values should be interpreted as strings
-    #[arg(long, alias = "quoted_values_are_strings")]
-    quoted_values_are_strings: bool,
-
-    /// Determine if mode can be 'NULLABLE' or 'REQUIRED'
-    #[arg(long, alias = "infer_mode")]
-    infer_mode: bool,
-
-    /// Number of lines between heartbeat debugging messages
-    #[arg(long, alias = "debugging_interval", default_value = "1000")]
-    debugging_interval: usize,
-
-    /// Forces schema name to comply with BigQuery naming standard
-    #[arg(long, alias = "sanitize_names")]
-    sanitize_names: bool,
-
-    /// Ignore lines that cannot be parsed instead of stopping
-    #[arg(long, alias = "ignore_invalid_lines")]
-    ignore_invalid_lines: bool,
-
-    /// File that contains the existing BigQuery schema for a table
-    #[arg(long, alias = "existing_schema_path")]
-    existing_schema_path: Option<PathBuf>,
-
-    /// Preserve the original ordering of columns from input instead of sorting alphabetically
-    #[arg(long, alias = "preserve_input_sort_order")]
-    preserve_input_sort_order: bool,
-
-    /// Suppress progress messages (only output schema and errors)
-    #[arg(short, long)]
-    quiet: bool,
-
-    /// Input file (reads from stdin if not provided). Deprecated: use positional arguments instead.
-    #[arg(short, long)]
-    input: Option<PathBuf>,
-
-    /// Output file (writes to stdout if not provided)
-    #[arg(short, long)]
-    output: Option<PathBuf>,
-
-    /// Output separate schema for each input file instead of merging
-    #[arg(long)]
-    per_file: bool,
-
-    /// Output directory for per-file schemas (used with --per-file)
-    #[arg(long)]
-    output_dir: Option<PathBuf>,
-}
+// Include the CLI definition from the shared file
+// This ensures completions stay in sync with the actual CLI
+include!("src/cli/definition.rs");
 
 fn get_git_hash() -> Option<String> {
     let output = Command::new("git")
@@ -126,6 +52,9 @@ fn main() {
     println!("cargo:rerun-if-changed=.git/HEAD");
     println!("cargo:rerun-if-changed=.git/index");
 
+    // Re-run if CLI definition changes
+    println!("cargo:rerun-if-changed=src/cli/definition.rs");
+
     // Get output directory
     let out_dir = match env::var_os("OUT_DIR") {
         Some(dir) => PathBuf::from(dir),
@@ -137,7 +66,7 @@ fn main() {
     fs::create_dir_all(&completions_dir).expect("Failed to create completions directory");
 
     // Generate shell completions
-    let mut cmd = Args::command();
+    let mut cmd = Cli::command();
     for shell in Shell::value_variants() {
         generate_to(*shell, &mut cmd, "bq-schema-gen", &completions_dir)
             .expect("Failed to generate shell completions");
@@ -148,7 +77,7 @@ fn main() {
     fs::create_dir_all(&man_dir).expect("Failed to create man directory");
 
     // Generate man page
-    let cmd = Args::command();
+    let cmd = Cli::command();
     let man = clap_mangen::Man::new(cmd);
     let mut buffer: Vec<u8> = Vec::new();
     man.render(&mut buffer)
