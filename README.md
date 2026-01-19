@@ -52,7 +52,7 @@ Each release includes:
 
 ```bash
 # Example: Extract and install on macOS/Linux
-tar -xzf bq-schema-gen-v0.1.0-x86_64-apple-darwin.tar.gz
+tar -xzf bq-schema-gen-v0.1.1-x86_64-apple-darwin.tar.gz
 sudo mv bq-schema-gen /usr/local/bin/
 # Optionally install completions (e.g., for zsh)
 sudo mv completions/_bq-schema-gen /usr/local/share/zsh/site-functions/

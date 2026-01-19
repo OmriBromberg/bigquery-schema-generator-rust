@@ -1,28 +1,28 @@
 class BqSchemaGen < Formula
   desc "Generate BigQuery schema from JSON or CSV data"
   homepage "https://github.com/omribromberg/bigquery-schema-generator-rust"
-  version "0.1.0"
+  version "0.1.1"
   license "Apache-2.0"
 
   on_macos do
     on_arm do
-      url "https://github.com/omribromberg/bigquery-schema-generator-rust/releases/download/v0.1.0/bq-schema-gen-v0.1.0-aarch64-apple-darwin.tar.gz"
-      sha256 "775465dd1819a82f1605eaa6a3274a460c64f2930483fc37a449b76e38ad2282"
+      url "https://github.com/omribromberg/bigquery-schema-generator-rust/releases/download/v0.1.1/bq-schema-gen-v0.1.1-aarch64-apple-darwin.tar.gz"
+      sha256 "c8c2bc3e75f652aad684ebea8e0598a05afc7a54737d700425c00cb6bf396f37"
     end
     on_intel do
-      url "https://github.com/omribromberg/bigquery-schema-generator-rust/releases/download/v0.1.0/bq-schema-gen-v0.1.0-x86_64-apple-darwin.tar.gz"
-      sha256 "db8bde072ba06f032534409da2dcd90860a409407441d9f070768ca50ea35f34"
+      url "https://github.com/omribromberg/bigquery-schema-generator-rust/releases/download/v0.1.1/bq-schema-gen-v0.1.1-x86_64-apple-darwin.tar.gz"
+      sha256 "c24f5804e3b71474e2f5348ac930039c749b0cdc535dbdd3c2dfebdbe3857c1a"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/omribromberg/bigquery-schema-generator-rust/releases/download/v0.1.0/bq-schema-gen-v0.1.0-aarch64-unknown-linux-musl.tar.gz"
-      sha256 "10e1f345e0ab4b1d1f0f1f640a6753d7143d271db1c223420f19d8879c8e1ce3"
+      url "https://github.com/omribromberg/bigquery-schema-generator-rust/releases/download/v0.1.1/bq-schema-gen-v0.1.1-aarch64-unknown-linux-musl.tar.gz"
+      sha256 "4685350a1a6a8c5afc129af414b110ab8f05b3df2aee10c770c20d4fa92be52f"
     end
     on_intel do
-      url "https://github.com/omribromberg/bigquery-schema-generator-rust/releases/download/v0.1.0/bq-schema-gen-v0.1.0-x86_64-unknown-linux-musl.tar.gz"
-      sha256 "19112911508d3b1d8e9e671c81f2a907af0396472df96f7947d0cc512b57bbe3"
+      url "https://github.com/omribromberg/bigquery-schema-generator-rust/releases/download/v0.1.1/bq-schema-gen-v0.1.1-x86_64-unknown-linux-musl.tar.gz"
+      sha256 "b529f46cbbff457e7468f8a9fb6fed45903f19161c95128ea86067d37429e39a"
     end
   end
 
